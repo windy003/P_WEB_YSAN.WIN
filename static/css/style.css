@@ -299,6 +299,7 @@ textarea:focus-visible {
 }
 
 .user-chip-name {
+  min-width: 0;
   max-width: 120px;
   overflow: hidden;
   color: rgba(255, 255, 255, 0.9);
@@ -3327,11 +3328,12 @@ a.post-author:hover .post-author-text strong {
   }
 
   .user-chip-name {
-    display: none;
+    max-width: 84px;
+    font-size: 0.78rem;
   }
 
   .user-chip {
-    padding: 4px;
+    padding: 4px 8px 4px 4px;
     border-color: transparent;
     background: transparent;
   }
@@ -3347,6 +3349,10 @@ a.post-author:hover .post-author-text strong {
   }
 
   .site-header.is-admin .brand-text {
+    display: none;
+  }
+
+  .site-header.is-admin .mobile-home-link {
     display: none;
   }
 
@@ -3681,6 +3687,11 @@ a.post-author:hover .post-author-text strong {
   .brand-mark {
     width: 32px;
     height: 32px;
+  }
+
+  .user-chip-name {
+    max-width: 64px;
+    font-size: 0.74rem;
   }
 
   .header-account .btn--small {
