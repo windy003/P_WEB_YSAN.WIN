@@ -3557,6 +3557,59 @@ a.post-author:hover .post-author-text strong {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .admin-panel {
+    padding: 20px 16px;
+  }
+
+  .admin-table-wrap {
+    overflow-x: visible;
+  }
+
+  .admin-table--stack thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .admin-table--stack,
+  .admin-table--stack tbody,
+  .admin-table--stack tr,
+  .admin-table--stack td {
+    display: block;
+    width: 100%;
+  }
+
+  .admin-table--stack tr {
+    margin-bottom: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  .admin-table--stack tr:last-child {
+    margin-bottom: 0;
+  }
+
+  .admin-table--stack td {
+    padding: 4px 0;
+    border-top: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .admin-table--stack td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--ink-faint);
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
   .page-shell {
     padding: 24px 0 64px;
   }

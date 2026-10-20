@@ -25,7 +25,7 @@
       <section class="admin-panel">
         {% if pagination.items %}
           <div class="admin-table-wrap">
-            <table class="admin-table">
+            <table class="admin-table admin-table--stack">
               <thead>
                 <tr>
                   <th scope="col">IP 地址</th>
@@ -38,10 +38,10 @@
               <tbody>
                 {% for visitor in pagination.items %}
                   <tr>
-                    <td>
+                    <td data-label="IP 地址">
                       <a href="{{ url_for('admin_visitor_detail', visitor_id=visitor.id) }}">{{ visitor.ip_address }}</a>
                     </td>
-                    <td>
+                    <td data-label="登录用户">
                       {% if visitor.user %}
                         <a href="{{ url_for('user_profile', user_id=visitor.user.id) }}">{{ visitor.user.display_name }}</a>
                         <span class="admin-table-sub">@{{ visitor.user.username }}</span>
@@ -49,9 +49,9 @@
                         <span class="admin-table-sub">未登录访问</span>
                       {% endif %}
                     </td>
-                    <td>{{ visitor.visit_count }}</td>
-                    <td>{{ visitor.first_seen|localtime }}</td>
-                    <td>
+                    <td data-label="访问次数">{{ visitor.visit_count }}</td>
+                    <td data-label="首次访问">{{ visitor.first_seen|localtime }}</td>
+                    <td data-label="最近访问">
                       {{ visitor.last_seen|localtime }}
                       <span class="admin-table-sub">{{ visitor.last_seen|timeago }}</span>
                     </td>
