@@ -30,12 +30,18 @@
                   class="avatar avatar--xl avatar--image"
                   {% if g.user.avatar_filename %}src="{{ url_for('avatar_file', filename=g.user.avatar_filename) }}"{% endif %}
                   alt="当前头像预览"
+                  title="点击放大当前头像"
+                  data-avatar-view
+                  data-avatar-name="{{ g.user.display_name }}"
                   {% if not g.user.avatar_filename %}hidden{% endif %}
                 >
                 <span
                   id="avatar-preview-fallback"
                   class="avatar avatar--xl"
                   aria-hidden="true"
+                  title="点击放大当前头像"
+                  data-avatar-view
+                  data-avatar-name="{{ g.user.display_name }}"
                   {% if g.user.avatar_filename %}hidden{% endif %}
                 >{{ g.user.initial }}</span>
               </div>

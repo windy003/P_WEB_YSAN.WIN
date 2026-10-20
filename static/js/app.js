@@ -1309,4 +1309,120 @@
     input.addEventListener("input", update);
     update();
   });
+
+  const avatarLightbox = (() => {
+    let overlay = null;
+    let image = null;
+    let initial = null;
+    let caption = null;
+    let closeButton = null;
+    let lastFocused = null;
+
+    const close = () => {
+      if (!overlay) {
+        return;
+      }
+      overlay.classList.remove("is-open");
+      document.body.classList.remove("avatar-lightbox-open");
+      window.setTimeout(() => {
+        if (overlay && !overlay.classList.contains("is-open")) {
+          overlay.hidden = true;
+        }
+      }, 180);
+      if (lastFocused && typeof lastFocused.focus === "function") {
+        lastFocused.focus();
+        lastFocused = null;
+      }
+    };
+
+    const build = () => {
+      overlay = document.createElement("div");
+      overlay.className = "avatar-lightbox";
+      overlay.hidden = true;
+      overlay.setAttribute("role", "dialog");
+      overlay.setAttribute("aria-modal", "true");
+      overlay.setAttribute("aria-label", "查看头像");
+
+      const panel = document.createElement("div");
+      panel.className = "avatar-lightbox-panel";
+
+      image = document.createElement("img");
+      image.className = "avatar-lightbox-image";
+      image.alt = "";
+      image.hidden = true;
+      panel.append(image);
+
+      initial = document.createElement("span");
+      initial.className = "avatar-lightbox-initial";
+      initial.hidden = true;
+      panel.append(initial);
+
+      caption = document.createElement("p");
+      caption.className = "avatar-lightbox-caption";
+      panel.append(caption);
+
+      closeButton = document.createElement("button");
+      closeButton.type = "button";
+      closeButton.className = "avatar-lightbox-close";
+      closeButton.setAttribute("aria-label", "关闭头像预览");
+      closeButton.textContent = "×";
+      closeButton.addEventListener("click", close);
+
+      overlay.append(panel, closeButton);
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) {
+          close();
+        }
+      });
+      document.body.append(overlay);
+    };
+
+    const open = (source) => {
+      if (!overlay) {
+        build();
+      }
+      lastFocused = document.activeElement;
+      const name = source.dataset.avatarName || "";
+
+      if (source.tagName === "IMG") {
+        image.src = source.currentSrc || source.src;
+        image.alt = name ? `${name} 的头像` : "头像";
+        image.hidden = false;
+        initial.hidden = true;
+      } else {
+        initial.textContent = (source.textContent || "").trim();
+        initial.hidden = false;
+        image.hidden = true;
+      }
+
+      caption.textContent = name;
+      caption.hidden = !name;
+      overlay.hidden = false;
+      document.body.classList.add("avatar-lightbox-open");
+      window.requestAnimationFrame(() => {
+        if (overlay) {
+          overlay.classList.add("is-open");
+        }
+      });
+      closeButton.focus();
+    };
+
+    return { open, close };
+  })();
+
+  document.addEventListener("click", (event) => {
+    const target = event.target.closest?.("[data-avatar-view]");
+    if (!target) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    avatarLightbox.open(target);
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      avatarLightbox.close();
+    }
+  });
 })();

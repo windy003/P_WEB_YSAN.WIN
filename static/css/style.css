@@ -460,6 +460,109 @@ textarea:focus-visible {
   background: var(--surface-muted);
 }
 
+.avatar[data-avatar-view] {
+  cursor: zoom-in;
+}
+
+.avatar-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(10, 16, 24, 0.88);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.avatar-lightbox.is-open {
+  opacity: 1;
+}
+
+.avatar-lightbox-panel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-width: min(92vw, 760px);
+  max-height: 88vh;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.avatar-lightbox-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(88vw, 720px);
+  max-height: 76vh;
+  object-fit: contain;
+  border-radius: 18px;
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+}
+
+.avatar-lightbox-initial {
+  display: grid;
+  width: min(66vw, 52vh);
+  height: min(66vw, 52vh);
+  place-items: center;
+  color: var(--gold-deep);
+  border: 1px solid rgba(140, 100, 52, 0.14);
+  border-radius: 50%;
+  background: var(--gold-soft);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  font-family: var(--font-serif);
+  font-size: min(32vw, 25vh);
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.avatar-lightbox-caption {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+.avatar-lightbox-close {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  place-items: center;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(17, 24, 32, 0.6);
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.avatar-lightbox-close:hover,
+.avatar-lightbox-close:focus-visible {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+body.avatar-lightbox-open {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .avatar-lightbox {
+    transition: none;
+  }
+}
+
 /* Buttons and links */
 
 .btn {
