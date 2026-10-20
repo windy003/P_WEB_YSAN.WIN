@@ -971,7 +971,7 @@
       video.preload = "metadata";
     };
 
-    video.preload = "auto";
+    video.preload = "metadata";
     video.addEventListener("loadedmetadata", () => {
       durationBadge.textContent = formatMediaDuration(video.duration);
       if (Number.isFinite(video.duration) && video.duration > 0) {
@@ -1040,6 +1040,11 @@
       poster.src = canvas.toDataURL("image/jpeg", 0.85);
       poster.alt = "";
       poster.setAttribute("aria-hidden", "true");
+
+      // Stop the media fetch as soon as the thumbnail is captured.
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
       video.replaceWith(poster);
     };
 
@@ -1048,7 +1053,7 @@
         return;
       }
       started = true;
-      video.preload = "auto";
+      video.preload = "metadata";
       video.addEventListener("loadedmetadata", () => {
         durationBadge.textContent = formatMediaDuration(video.duration);
         if (Number.isFinite(video.duration) && video.duration > 0) {
