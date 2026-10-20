@@ -1048,6 +1048,45 @@ class CommunityTestCase(unittest.TestCase):
                 )
             )
 
+    def test_visitor_records_logged_in_user(self):
+        self.configure_admin()
+        self.register(username="恩雨", phone="13800138000")
+
+        with self.app.app_context():
+            user = db.session.scalar(
+                db.select(User).where(User.username == "恩雨")
+            )
+            visitor = db.session.scalar(
+                db.select(Visitor).where(Visitor.ip_address == "127.0.0.1")
+            )
+            self.assertIsNotNone(user)
+            self.assertIsNotNone(visitor)
+            self.assertEqual(visitor.user_id, user.id)
+
+        token = self.csrf_token("/admin")
+        self.client.post(
+            "/admin",
+            data={
+                "csrf_token": token,
+                "username": "admin",
+                "password": "admin-pass",
+            },
+        )
+
+        visitors_html = self.client.get("/admin/visitors").get_data(as_text=True)
+        self.assertIn("登录用户", visitors_html)
+        self.assertIn("@恩雨", visitors_html)
+
+        with self.app.app_context():
+            visitor_id = db.session.scalar(
+                db.select(Visitor.id).where(Visitor.ip_address == "127.0.0.1")
+            )
+        detail_html = self.client.get(
+            f"/admin/visitors/{visitor_id}"
+        ).get_data(as_text=True)
+        self.assertIn("登录用户", detail_html)
+        self.assertIn("@恩雨", detail_html)
+
     def test_visitor_pages_require_admin_login(self):
         response = self.client.get("/admin/visitors")
         self.assertEqual(response.status_code, 302)

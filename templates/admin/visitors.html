@@ -29,6 +29,7 @@
               <thead>
                 <tr>
                   <th scope="col">IP 地址</th>
+                  <th scope="col">登录用户</th>
                   <th scope="col">访问次数</th>
                   <th scope="col">首次访问</th>
                   <th scope="col">最近访问</th>
@@ -39,6 +40,14 @@
                   <tr>
                     <td>
                       <a href="{{ url_for('admin_visitor_detail', visitor_id=visitor.id) }}">{{ visitor.ip_address }}</a>
+                    </td>
+                    <td>
+                      {% if visitor.user %}
+                        <a href="{{ url_for('user_profile', user_id=visitor.user.id) }}">{{ visitor.user.display_name }}</a>
+                        <span class="admin-table-sub">@{{ visitor.user.username }}</span>
+                      {% else %}
+                        <span class="admin-table-sub">未登录访问</span>
+                      {% endif %}
                     </td>
                     <td>{{ visitor.visit_count }}</td>
                     <td>{{ visitor.first_seen|localtime }}</td>

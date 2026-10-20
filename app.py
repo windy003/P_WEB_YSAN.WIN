@@ -544,11 +544,16 @@ class Visitor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     ip_address = db.Column(db.String(64), nullable=False, unique=True, index=True)
     user_agent = db.Column(db.String(255), nullable=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=True, index=True
+    )
     visit_count = db.Column(db.Integer, nullable=False, default=0)
     first_seen = db.Column(db.DateTime, nullable=False, default=utcnow)
     last_seen = db.Column(
         db.DateTime, nullable=False, default=utcnow, index=True
     )
+
+    user = db.relationship("User")
 
 
 def purge_expired_messages():
@@ -1207,6 +1212,7 @@ def create_app(test_config=None):
             return
 
         now = utcnow()
+        user_id = g.user.id if g.user else None
         visitor = db.session.scalar(
             db.select(Visitor).where(Visitor.ip_address == ip_address)
         )
@@ -1214,6 +1220,7 @@ def create_app(test_config=None):
             visitor = Visitor(
                 ip_address=ip_address,
                 user_agent=(request.user_agent.string or "")[:255] or None,
+                user_id=user_id,
                 visit_count=1,
                 first_seen=now,
                 last_seen=now,
@@ -1225,6 +1232,8 @@ def create_app(test_config=None):
             user_agent = (request.user_agent.string or "")[:255]
             if user_agent:
                 visitor.user_agent = user_agent
+            if user_id:
+                visitor.user_id = user_id
 
         try:
             db.session.commit()
@@ -2882,6 +2891,18 @@ def create_app(test_config=None):
                     text("ALTER TABLE users ADD COLUMN bio VARCHAR(80)")
                 )
             db.session.commit()
+        if "visitors" in table_names:
+            columns = {
+                column["name"] for column in inspector.get_columns("visitors")
+            }
+            if "user_id" not in columns:
+                db.session.execute(
+                    text(
+                        "ALTER TABLE visitors "
+                        "ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                    )
+                )
+                db.session.commit()
 
     return app
 

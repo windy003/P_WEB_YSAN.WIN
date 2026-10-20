@@ -28,6 +28,17 @@
             <dd>{{ location }}</dd>
           </div>
           <div>
+            <dt>登录用户</dt>
+            <dd>
+              {% if visitor.user %}
+                <a class="text-link" href="{{ url_for('user_profile', user_id=visitor.user.id) }}">{{ visitor.user.display_name }}</a>
+                <span class="admin-table-sub">@{{ visitor.user.username }}</span>
+              {% else %}
+                未登录访问
+              {% endif %}
+            </dd>
+          </div>
+          <div>
             <dt>访问次数</dt>
             <dd>{{ visitor.visit_count }}</dd>
           </div>
