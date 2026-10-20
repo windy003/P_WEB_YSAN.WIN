@@ -13,6 +13,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app import (  # noqa: E402
+    Comment,
     Post,
     PostMedia,
     User,
@@ -616,6 +617,147 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(
             list(Path(self.app.config["MEDIA_CHUNK_FOLDER"]).glob("*")), []
         )
+
+    def test_post_owner_can_delete_post_and_all_media(self):
+        self.register()
+        token = self.csrf_token("/posts/new")
+        image_data = b"\xff\xd8\xff\xe0" + b"0" * 100
+        video_data = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 100
+
+        response = self.client.post(
+            "/posts/new",
+            data={
+                "csrf_token": token,
+                "title": "待删除的帖子",
+                "content": "正文、图片和视频都应该被删除。",
+                "media": [
+                    (BytesIO(image_data), "photo.jpg"),
+                    (BytesIO(video_data), "clip.mp4"),
+                ],
+            },
+            content_type="multipart/form-data",
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        with self.app.app_context():
+            post = db.session.scalar(
+                db.select(Post).where(Post.title == "待删除的帖子")
+            )
+            post_id = post.id
+            filenames = [item.filename for item in post.media]
+            self.assertEqual(len(filenames), 2)
+
+        token = self.csrf_token(f"/posts/{post_id}")
+        self.client.post(
+            f"/posts/{post_id}/comments",
+            data={"csrf_token": token, "content": "一条回应"},
+            follow_redirects=True,
+        )
+
+        home_html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(f"/posts/{post_id}/delete", home_html)
+
+        token = self.csrf_token("/")
+        response = self.client.post(
+            f"/posts/{post_id}/delete",
+            data={"csrf_token": token, "next": "/"},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("帖子已删除", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            self.assertIsNone(db.session.get(Post, post_id))
+            self.assertEqual(db.session.scalars(db.select(Comment)).all(), [])
+            self.assertEqual(db.session.scalars(db.select(PostMedia)).all(), [])
+
+        for filename in filenames:
+            self.assertFalse((self.media_dir / filename).exists())
+
+        detail = self.client.get(f"/posts/{post_id}")
+        self.assertEqual(detail.status_code, 404)
+
+    def test_non_owner_cannot_delete_post(self):
+        self.register()
+        token = self.csrf_token("/posts/new")
+        self.client.post(
+            "/posts/new",
+            data={
+                "csrf_token": token,
+                "title": "别人的帖子",
+                "content": "普通用户不能删除这篇帖子。",
+            },
+            follow_redirects=True,
+        )
+        with self.app.app_context():
+            post_id = db.session.scalar(
+                db.select(Post.id).where(Post.title == "别人的帖子")
+            )
+
+        self.logout()
+        self.register(username="另一个人", password="grace456")
+
+        home_html = self.client.get("/").get_data(as_text=True)
+        self.assertNotIn(f"/posts/{post_id}/delete", home_html)
+
+        token = self.csrf_token("/")
+        response = self.client.post(
+            f"/posts/{post_id}/delete",
+            data={"csrf_token": token},
+        )
+        self.assertEqual(response.status_code, 403)
+
+        with self.app.app_context():
+            self.assertIsNotNone(db.session.get(Post, post_id))
+
+    def test_admin_can_delete_any_post(self):
+        self.register()
+        token = self.csrf_token("/posts/new")
+        self.client.post(
+            "/posts/new",
+            data={
+                "csrf_token": token,
+                "title": "管理员要删除的帖子",
+                "content": "管理员可以删除任何帖子。",
+            },
+            follow_redirects=True,
+        )
+        with self.app.app_context():
+            post_id = db.session.scalar(
+                db.select(Post.id).where(Post.title == "管理员要删除的帖子")
+            )
+
+        self.logout()
+        self.app.config["ADMIN_USERNAME"] = "admin"
+        self.app.config["ADMIN_PASSWORD"] = "admin-pass"
+
+        token = self.csrf_token("/admin")
+        response = self.client.post(
+            "/admin",
+            data={
+                "csrf_token": token,
+                "username": "admin",
+                "password": "admin-pass",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("管理员登录成功", response.get_data(as_text=True))
+
+        home_html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(f"/posts/{post_id}/delete", home_html)
+
+        token = self.csrf_token("/")
+        response = self.client.post(
+            f"/posts/{post_id}/delete",
+            data={"csrf_token": token},
+            follow_redirects=True,
+        )
+        self.assertIn("帖子已删除", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            self.assertIsNone(db.session.get(Post, post_id))
 
     def test_authenticated_user_is_redirected_away_from_login(self):
         self.register()

@@ -2235,11 +2235,17 @@ def create_app(test_config=None):
         )
 
     @app.post("/posts/<int:post_id>/delete")
-    @admin_required
     def delete_post(post_id):
         post = db.session.get(Post, post_id)
         if post is None:
             abort(404)
+
+        is_admin = bool(session.get("admin_authenticated"))
+        if not is_admin and (g.user is None or post.user_id != g.user.id):
+            if g.user is None:
+                flash("请先登录，再删除帖子。", "info")
+                return redirect(url_for("login"))
+            abort(403)
 
         media_filenames = [item.filename for item in post.media]
         db.session.delete(post)

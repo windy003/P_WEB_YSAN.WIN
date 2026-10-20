@@ -31,7 +31,7 @@
         <div class="post-list">
           {% for post in pagination.items %}
             {% set post_url = url_for('post_detail', post_id=post.id) %}
-            {% set is_admin = session.get('admin_authenticated') %}
+            {% set can_delete = session.get('admin_authenticated') or (g.user and g.user.id == post.user_id) %}
             <div class="post-card">
               <a class="post-card-link" href="{{ post_url }}">
                 <div class="post-card-head">
@@ -77,7 +77,7 @@
                 </span>
                 <span class="post-card-foot-right">
                   <a class="read-more" href="{{ post_url }}">继续阅读</a>
-                  {% if is_admin %}
+                  {% if can_delete %}
                     <form
                       method="post"
                       action="{{ url_for('delete_post', post_id=post.id) }}"
