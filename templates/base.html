@@ -8,6 +8,8 @@
   <title>{% block title %}耶稣爱你.胜利{% endblock %}</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ url_for('static', filename='180x180.ico') }}">
+
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
