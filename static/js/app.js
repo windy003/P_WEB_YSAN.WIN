@@ -1045,6 +1045,9 @@
       return;
     }
 
+    // Do not fetch any video data until the viewer asks to play.
+    video.preload = "none";
+
     const overlay = document.createElement("button");
     overlay.type = "button";
     overlay.className = "video-thumb-overlay";
@@ -1061,81 +1064,17 @@
     playIcon.textContent = "▶";
     overlay.append(playIcon);
 
-    const durationBadge = document.createElement("span");
-    durationBadge.className = "video-thumb-duration";
-    durationBadge.textContent = "--:--";
-    overlay.append(durationBadge);
-
     figure.append(overlay);
 
     const posterSource = video.getAttribute("poster");
-    let captured = Boolean(posterSource);
-    let attempts = 0;
     if (posterSource) {
       image.src = posterSource;
       overlay.classList.add("is-ready");
     }
 
-    const captureFrame = () => {
-      if (captured) {
-        return;
-      }
-      const width = video.videoWidth;
-      const height = video.videoHeight;
-      if (!width || !height) {
-        return;
-      }
-
-      const scale = Math.min(1, 720 / Math.max(width, height));
-      const canvas = document.createElement("canvas");
-      canvas.width = Math.max(1, Math.round(width * scale));
-      canvas.height = Math.max(1, Math.round(height * scale));
-      const context = canvas.getContext("2d");
-      if (!context) {
-        return;
-      }
-
-      try {
-        context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      } catch {
-        return;
-      }
-
-      if (frameIsMostlyDark(canvas) && attempts < 3) {
-        attempts += 1;
-        video.currentTime = thumbnailTime(video.duration, attempts);
-        return;
-      }
-
-      captured = true;
-      image.src = canvas.toDataURL("image/jpeg", 0.85);
-      overlay.classList.add("is-ready");
-      video.preload = "metadata";
-    };
-
-    video.preload = "metadata";
-    video.addEventListener("loadedmetadata", () => {
-      durationBadge.textContent = formatMediaDuration(video.duration);
-      if (
-        !posterSource &&
-        Number.isFinite(video.duration) &&
-        video.duration > 0
-      ) {
-        video.currentTime = thumbnailTime(video.duration, 0);
-      }
-    });
-    video.addEventListener("seeked", captureFrame);
-    if (!posterSource) {
-      window.setTimeout(() => {
-        if (!captured) {
-          captureFrame();
-        }
-      }, 10000);
-    }
-
     overlay.addEventListener("click", () => {
-      captured = true;
       overlay.remove();
+      video.preload = "auto";
       video.currentTime = 0;
       const played = video.play();
       if (played && typeof played.catch === "function") {
