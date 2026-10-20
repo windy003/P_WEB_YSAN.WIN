@@ -1648,6 +1648,36 @@ def create_app(test_config=None):
             400 if errors else 200,
         )
 
+    @app.post("/posts/<int:post_id>/delete")
+    @admin_required
+    def delete_post(post_id):
+        post = db.session.get(Post, post_id)
+        if post is None:
+            abort(404)
+
+        media_filenames = [item.filename for item in post.media]
+        db.session.delete(post)
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Could not delete post %s", post_id)
+            flash("删除失败，请稍后重试。", "error")
+        else:
+            for filename in media_filenames:
+                try:
+                    (Path(app.config["MEDIA_FOLDER"]) / filename).unlink(
+                        missing_ok=True
+                    )
+                except OSError:
+                    app.logger.warning(
+                        "Could not delete media file %s", filename, exc_info=True
+                    )
+            flash("帖子已删除。", "success")
+
+        target = safe_next_url(request.form.get("next", ""))
+        return redirect(target or url_for("index"))
+
     @app.post("/posts/<int:post_id>/comments")
     @login_required
     def add_comment(post_id):

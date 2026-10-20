@@ -30,39 +30,43 @@
       <div class="container container--narrow">
         <div class="post-list">
           {% for post in pagination.items %}
-            <a class="post-card" href="{{ url_for('post_detail', post_id=post.id) }}">
-              <div class="post-card-head">
-                <div class="post-author">
-                  {{ user_avatar(post.author) }}
-                  <span class="post-author-text">
-                    <strong>{{ post.author.display_name }}</strong>
-                    <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">
-                      {{ post.created_at|timeago }}
-                    </time>
-                  </span>
-                </div>
-                <span class="post-card-arrow" aria-hidden="true">↗</span>
-              </div>
-
-              <h3>{{ post.title }}</h3>
-              {% if post.content %}
-                <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>
-              {% endif %}
-
-              {% if post.media %}
-                <div class="home-post-media{% if post.media|length == 1 %} home-post-media--single{% endif %}">
-                  {% for item in post.media %}
-                    {% set media_url = url_for('media_file', filename=item.filename) %}
-                    <span class="home-post-media-item{% if item.kind == 'video' %} home-post-media-item--video{% endif %}"{% if item.kind == 'video' %} data-video-poster{% endif %}>
-                      {% if item.kind == 'image' %}
-                        <img src="{{ media_url }}" alt="{{ post.title }} - 图片 {{ loop.index }}" loading="lazy">
-                      {% else %}
-                        <video src="{{ media_url }}" preload="metadata" muted playsinline aria-hidden="true"></video>
-                      {% endif %}
+            {% set post_url = url_for('post_detail', post_id=post.id) %}
+            {% set is_admin = session.get('admin_authenticated') %}
+            <div class="post-card">
+              <a class="post-card-link" href="{{ post_url }}">
+                <div class="post-card-head">
+                  <div class="post-author">
+                    {{ user_avatar(post.author) }}
+                    <span class="post-author-text">
+                      <strong>{{ post.author.display_name }}</strong>
+                      <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">
+                        {{ post.created_at|timeago }}
+                      </time>
                     </span>
-                  {% endfor %}
+                  </div>
+                  <span class="post-card-arrow" aria-hidden="true">↗</span>
                 </div>
-              {% endif %}
+
+                <h3>{{ post.title }}</h3>
+                {% if post.content %}
+                  <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>
+                {% endif %}
+
+                {% if post.media %}
+                  <div class="home-post-media{% if post.media|length == 1 %} home-post-media--single{% endif %}">
+                    {% for item in post.media %}
+                      {% set media_url = url_for('media_file', filename=item.filename) %}
+                      <span class="home-post-media-item{% if item.kind == 'video' %} home-post-media-item--video{% endif %}"{% if item.kind == 'video' %} data-video-poster{% endif %}>
+                        {% if item.kind == 'image' %}
+                          <img src="{{ media_url }}" alt="{{ post.title }} - 图片 {{ loop.index }}" loading="lazy">
+                        {% else %}
+                          <video src="{{ media_url }}" preload="metadata" muted playsinline aria-hidden="true"></video>
+                        {% endif %}
+                      </span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </a>
 
               <div class="post-card-foot">
                 <span class="comment-count">
@@ -71,9 +75,23 @@
                   </svg>
                   {{ counts.get(post.id, 0) }} 条回应
                 </span>
-                <span class="read-more">继续阅读</span>
+                <span class="post-card-foot-right">
+                  <a class="read-more" href="{{ post_url }}">继续阅读</a>
+                  {% if is_admin %}
+                    <form
+                      method="post"
+                      action="{{ url_for('delete_post', post_id=post.id) }}"
+                      class="inline-form post-card-delete-form"
+                      onsubmit="return confirm('确定要删除这篇帖子吗？删除后无法恢复。');"
+                    >
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                      <input type="hidden" name="next" value="{{ url_for('index', page=pagination.page) }}#latest-discussions">
+                      <button type="submit" class="post-card-delete">删除帖子</button>
+                    </form>
+                  {% endif %}
+                </span>
               </div>
-            </a>
+            </div>
           {% endfor %}
         </div>
 
