@@ -23,6 +23,50 @@
       : `${pad(minutes)}:${pad(remaining)}`;
   };
 
+  const thumbnailTime = (duration, attempt = 0) => {
+    if (!Number.isFinite(duration) || duration <= 0) {
+      return 0;
+    }
+    if (duration <= 1) {
+      return Math.max(0.05, duration / 2);
+    }
+    const ratios = [0.1, 0.3, 0.5, 0.7];
+    const ratio = ratios[Math.min(attempt, ratios.length - 1)];
+    const earliest = Math.min(2, duration * 0.2);
+    const latest = Math.max(earliest, duration - 0.5);
+    return Math.max(earliest, Math.min(duration * ratio, latest));
+  };
+
+  const frameIsMostlyDark = (canvas) => {
+    const sample = document.createElement("canvas");
+    sample.width = 16;
+    sample.height = 16;
+    const context = sample.getContext("2d");
+    if (!context) {
+      return false;
+    }
+    try {
+      context.drawImage(canvas, 0, 0, 16, 16);
+    } catch {
+      return false;
+    }
+    const data = context.getImageData(0, 0, 16, 16).data;
+    let total = 0;
+    let peak = 0;
+    for (let index = 0; index < data.length; index += 4) {
+      const luminance =
+        0.299 * data[index] +
+        0.587 * data[index + 1] +
+        0.114 * data[index + 2];
+      total += luminance;
+      if (luminance > peak) {
+        peak = luminance;
+      }
+    }
+    const pixels = data.length / 4;
+    return peak < 24 || total / pixels < 10;
+  };
+
   document.querySelectorAll("[data-flash]").forEach((flash) => {
     const closeButton = flash.querySelector("[data-flash-close]");
     closeButton?.addEventListener("click", () => dismissFlash(flash));
@@ -940,6 +984,7 @@
     figure.append(overlay);
 
     let captured = false;
+    let attempts = 0;
     const captureFrame = () => {
       if (captured) {
         return;
@@ -965,6 +1010,12 @@
         return;
       }
 
+      if (frameIsMostlyDark(canvas) && attempts < 3) {
+        attempts += 1;
+        video.currentTime = thumbnailTime(video.duration, attempts);
+        return;
+      }
+
       captured = true;
       image.src = canvas.toDataURL("image/jpeg", 0.85);
       overlay.classList.add("is-ready");
@@ -975,14 +1026,20 @@
     video.addEventListener("loadedmetadata", () => {
       durationBadge.textContent = formatMediaDuration(video.duration);
       if (Number.isFinite(video.duration) && video.duration > 0) {
-        video.currentTime = Math.min(1, video.duration / 2);
+        video.currentTime = thumbnailTime(video.duration, 0);
       }
     });
-    video.addEventListener("loadeddata", captureFrame);
     video.addEventListener("seeked", captureFrame);
+    window.setTimeout(() => {
+      if (!captured) {
+        captureFrame();
+      }
+    }, 10000);
 
     overlay.addEventListener("click", () => {
+      captured = true;
       overlay.remove();
+      video.currentTime = 0;
       const played = video.play();
       if (played && typeof played.catch === "function") {
         played.catch(() => {});
@@ -1009,6 +1066,7 @@
 
     let started = false;
     let captured = false;
+    let attempts = 0;
 
     const captureFrame = () => {
       if (captured) {
@@ -1035,6 +1093,12 @@
         return;
       }
 
+      if (frameIsMostlyDark(canvas) && attempts < 3) {
+        attempts += 1;
+        video.currentTime = thumbnailTime(video.duration, attempts);
+        return;
+      }
+
       captured = true;
       const poster = document.createElement("img");
       poster.src = canvas.toDataURL("image/jpeg", 0.85);
@@ -1057,11 +1121,15 @@
       video.addEventListener("loadedmetadata", () => {
         durationBadge.textContent = formatMediaDuration(video.duration);
         if (Number.isFinite(video.duration) && video.duration > 0) {
-          video.currentTime = Math.min(1, video.duration / 2);
+          video.currentTime = thumbnailTime(video.duration, 0);
         }
       });
-      video.addEventListener("loadeddata", captureFrame);
       video.addEventListener("seeked", captureFrame);
+      window.setTimeout(() => {
+        if (!captured) {
+          captureFrame();
+        }
+      }, 10000);
     };
 
     if ("IntersectionObserver" in window) {
