@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}管理员登录 · 耶稣爱你.胜利{% endblock %}
+{% block head %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container container--narrow">
+      <div class="admin-auth-card">
+        <h1>管理员登录</h1>
+        <p class="admin-auth-intro">请输入网站管理员账号，进入管理后台。</p>
+
+        {% if not configured %}
+          <p class="admin-auth-notice">
+            管理员账号尚未配置，请在 <code>.env</code> 中设置
+            <code>admin_name</code> 和 <code>admin_password</code>。
+          </p>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('admin') }}" class="stack-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+          <div class="form-field">
+            <label for="admin-username">管理员用户名</label>
+            <input
+              type="text"
+              id="admin-username"
+              name="username"
+              value="{{ admin_username }}"
+              autocomplete="username"
+              required
+              autofocus
+            >
+          </div>
+
+          <div class="form-field">
+            <label for="admin-password">密码</label>
+            <input
+              type="password"
+              id="admin-password"
+              name="password"
+              autocomplete="current-password"
+              required
+            >
+          </div>
+
+          <button type="submit" class="btn btn--primary btn--block"{% if not configured %} disabled{% endif %}>登录管理后台</button>
+        </form>
+
+        <a class="text-link admin-auth-back" href="{{ url_for('index') }}">← 返回首页</a>
+      </div>
+    </div>
+  </div>
+{% endblock %}

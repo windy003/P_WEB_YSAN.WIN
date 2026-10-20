@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}{{ visitor.ip_address }} · 独立 IP{% endblock %}
+{% block head %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container container--narrow">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ url_for('admin') }}">管理后台</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ url_for('admin_visitors') }}">独立 IP</a>
+        <span aria-hidden="true">/</span>
+        <span>{{ visitor.ip_address }}</span>
+      </nav>
+
+      <header class="page-heading">
+        <h1>{{ visitor.ip_address }}</h1>
+        <p>访问详情与归属地信息</p>
+      </header>
+
+      <section class="admin-panel">
+        <dl class="admin-detail-list">
+          <div>
+            <dt>归属地</dt>
+            <dd>{{ location }}</dd>
+          </div>
+          <div>
+            <dt>访问次数</dt>
+            <dd>{{ visitor.visit_count }}</dd>
+          </div>
+          <div>
+            <dt>首次访问</dt>
+            <dd>{{ visitor.first_seen|localtime }}</dd>
+          </div>
+          <div>
+            <dt>最近访问</dt>
+            <dd>{{ visitor.last_seen|localtime }}</dd>
+          </div>
+          <div>
+            <dt>User-Agent</dt>
+            <dd class="admin-detail-agent">{{ visitor.user_agent or "未知" }}</dd>
+          </div>
+        </dl>
+
+        <a class="text-link admin-detail-back" href="{{ url_for('admin_visitors') }}">← 返回所有独立 IP</a>
+      </section>
+    </div>
+  </div>
+{% endblock %}

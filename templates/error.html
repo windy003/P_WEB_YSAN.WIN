@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block title %}{{ code }} · {{ title }}{% endblock %}
+{% block body_class %}page-error{% endblock %}
+
+{% block content %}
+  <div class="error-page">
+    <div class="container error-inner">
+      <span class="error-cross" aria-hidden="true">✝</span>
+      <p class="error-code">{{ code }}</p>
+      <h1>{{ title }}</h1>
+      <p class="error-message">{{ message }}</p>
+      <div class="error-actions">
+        <a class="btn btn--primary" href="{{ url_for('index') }}">回到首页</a>
+        {% if g.user %}
+          <a class="btn btn--ghost" href="{{ url_for('new_post') }}">发帖</a>
+        {% else %}
+          <a class="btn btn--ghost" href="{{ url_for('login') }}">去登录</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% endblock %}

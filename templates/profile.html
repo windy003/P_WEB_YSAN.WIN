@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}个人资料 · 耶稣爱你.胜利{% endblock %}
+{% block body_class %}page-profile{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container container--narrow">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <span>个人资料</span>
+      </nav>
+
+      <header class="page-heading">
+        <h1>个人资料</h1>
+        <p>更新你的头像和昵称，让弟兄姊妹更容易认出你。</p>
+      </header>
+
+      <div class="profile-grid">
+        <section class="profile-card" aria-labelledby="avatar-heading">
+          <h2 id="avatar-heading">头像</h2>
+
+          <form method="post" action="{{ url_for('update_avatar') }}" enctype="multipart/form-data" class="avatar-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="avatar-editor">
+              <div class="avatar-preview-frame">
+                <img
+                  id="avatar-preview-image"
+                  class="avatar avatar--xl avatar--image"
+                  {% if g.user.avatar_filename %}src="{{ url_for('avatar_file', filename=g.user.avatar_filename) }}"{% endif %}
+                  alt="当前头像预览"
+                  {% if not g.user.avatar_filename %}hidden{% endif %}
+                >
+                <span
+                  id="avatar-preview-fallback"
+                  class="avatar avatar--xl"
+                  aria-hidden="true"
+                  {% if g.user.avatar_filename %}hidden{% endif %}
+                >{{ g.user.initial }}</span>
+              </div>
+
+              <label class="btn btn--primary btn--small upload-button" for="avatar-file">选择头像图片</label>
+              <input
+                class="visually-hidden"
+                type="file"
+                id="avatar-file"
+                name="avatar"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                required
+                data-avatar-input
+                data-preview-target="avatar-preview-image"
+                data-fallback-target="avatar-preview-fallback"
+                data-max-bytes="{{ avatar_max_bytes }}"
+                data-max-mb="{{ avatar_max_mb }}"
+              >
+              <p class="field-hint" data-avatar-status aria-live="polite">
+                {% if g.user.avatar_filename %}当前头像已保存{% else %}尚未设置头像{% endif %}
+              </p>
+              <button type="submit" class="btn btn--primary btn--small" data-avatar-submit disabled>保存头像</button>
+            </div>
+          </form>
+
+          {% if g.user.avatar_filename %}
+            <form method="post" action="{{ url_for('remove_avatar') }}" class="avatar-remove-form">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button type="submit" class="text-link-button">恢复默认头像</button>
+            </form>
+          {% endif %}
+        </section>
+
+        <section class="profile-card" aria-labelledby="nickname-heading">
+          <h2 id="nickname-heading">昵称</h2>
+
+          <form method="post" action="{{ url_for('update_nickname') }}" class="stack-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-field{% if errors.get('nickname') %} has-error{% endif %}">
+              <div class="label-row">
+                <label for="profile-nickname">新昵称</label>
+                <span class="char-hint" data-char-count-for="profile-nickname" data-max="{{ display_name_max_length }}">0 / {{ display_name_max_length }}</span>
+              </div>
+              <input
+                type="text"
+                id="profile-nickname"
+                name="nickname"
+                value="{{ nickname_form }}"
+                placeholder="{{ g.user.username }}"
+                maxlength="{{ display_name_max_length }}"
+                autocomplete="nickname"
+                {% if errors.get('nickname') %}aria-invalid="true" aria-describedby="nickname-error"{% endif %}
+              >
+              {% if errors.get('nickname') %}
+                <p class="field-error" id="nickname-error">{{ errors.nickname }}</p>
+              {% endif %}
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn--primary btn--small">保存昵称</button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </div>
+  </div>
+{% endblock %}

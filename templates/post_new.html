@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}发帖 · 耶稣爱你.胜利{% endblock %}
+{% block body_class %}page-editor{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <span>发帖</span>
+      </nav>
+
+      <div class="editor-layout">
+        <form method="post" action="{{ url_for('new_post') }}" enctype="multipart/form-data" class="editor-card stack-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+          <div class="form-field{% if errors.get('title') %} has-error{% endif %}">
+            <div class="label-row">
+              <label for="post-title">标题</label>
+              <span class="char-hint" data-char-count-for="post-title" data-max="120">0 / 120</span>
+            </div>
+            <input
+              type="text"
+              id="post-title"
+              name="title"
+              value="{{ form.title }}"
+              placeholder="用一句话概括你想讨论的内容"
+              maxlength="120"
+              required
+              autofocus
+              {% if errors.get('title') %}aria-invalid="true" aria-describedby="title-error"{% endif %}
+            >
+            {% if errors.get('title') %}
+              <p class="field-error" id="title-error">{{ errors.title }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field{% if errors.get('content') %} has-error{% endif %}">
+            <div class="label-row">
+              <label for="post-content">正文 <span class="optional-tag">可选</span></label>
+              <span class="char-hint" data-char-count-for="post-content" data-max="10000">0 / 10000</span>
+            </div>
+            <textarea
+              id="post-content"
+              name="content"
+              rows="12"
+              placeholder="分享你的故事、问题或感动……"
+              maxlength="10000"
+              {% if errors.get('content') %}aria-invalid="true" aria-describedby="content-error"{% endif %}
+            >{{ form.content }}</textarea>
+            {% if errors.get('content') %}
+              <p class="field-error" id="content-error">{{ errors.content }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field{% if errors.get('media') %} has-error{% endif %}">
+            <label class="upload-zone" for="post-media">
+              <span class="upload-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4.5" width="18" height="15" rx="2.5"/>
+                  <circle cx="8.5" cy="9.5" r="1.5"/>
+                  <path d="m4 17 4.8-4.8a2 2 0 0 1 2.8 0l2.4 2.4 1.6-1.6a2 2 0 0 1 2.8 0L21 16"/>
+                </svg>
+              </span>
+              <span class="upload-copy">
+                <strong>添加图片或视频 <span class="optional-tag">可选</span></strong>
+              </span>
+              <input
+                class="visually-hidden"
+                type="file"
+                id="post-media"
+                name="media"
+                accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,video/quicktime,video/x-m4v,video/ogg"
+                multiple
+                data-media-input
+                data-preview-target="media-preview"
+                data-max-files="{{ media_max_files }}"
+                data-max-image-bytes="{{ media_max_image_bytes }}"
+                data-max-video-bytes="{{ media_max_video_bytes }}"
+              >
+            </label>
+
+            <div class="media-preview" id="media-preview" data-media-preview hidden>
+              <div class="media-preview-grid" data-media-preview-grid></div>
+              <div class="media-preview-foot">
+                <span class="field-hint" data-media-filecount></span>
+                <button type="button" class="media-clear-button" data-media-clear>清空选择</button>
+              </div>
+            </div>
+            <p class="field-hint" data-media-status aria-live="polite"></p>
+            {% if errors.get('media') %}
+              <p class="field-error">{{ errors.media }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-actions">
+            <a class="btn btn--ghost" href="{{ url_for('index') }}">取消</a>
+            <button type="submit" class="btn btn--primary">发布讨论</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{% endblock %}

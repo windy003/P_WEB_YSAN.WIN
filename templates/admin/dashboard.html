@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}管理后台 · 耶稣爱你.胜利{% endblock %}
+{% block head %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <span>管理后台</span>
+      </nav>
+
+      <header class="page-heading admin-heading">
+        <div>
+          <h1>管理后台</h1>
+          <p>当前管理员：{{ admin_username }}</p>
+        </div>
+        <form method="post" action="{{ url_for('admin_logout') }}" class="inline-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit" class="btn btn--ghost btn--small">退出管理后台</button>
+        </form>
+      </header>
+
+      <section class="admin-stats" aria-label="站点统计">
+        <div class="admin-stat">
+          <strong>{{ stats.users }}</strong>
+          <span>注册用户</span>
+        </div>
+        <div class="admin-stat">
+          <strong>{{ stats.posts }}</strong>
+          <span>帖子</span>
+        </div>
+        <div class="admin-stat">
+          <strong>{{ stats.comments }}</strong>
+          <span>回应</span>
+        </div>
+        <div class="admin-stat">
+          <strong>{{ stats.visitors_24h }}</strong>
+          <span>24 小时独立 IP</span>
+        </div>
+      </section>
+
+      <div class="admin-visitor-bar">
+        <p>
+          最近 24 小时独立 IP：<strong>{{ stats.visitors_24h }}</strong> 个
+          · 累计独立 IP：<strong>{{ stats.visitors_total }}</strong> 个
+        </p>
+        <a class="btn btn--ghost btn--small" href="{{ url_for('admin_visitors') }}">查看所有独立 IP</a>
+      </div>
+
+      <div class="admin-columns">
+        <section class="admin-panel" aria-labelledby="admin-posts-heading">
+          <h2 id="admin-posts-heading">最新帖子</h2>
+          {% if recent_posts %}
+            <ul class="admin-list">
+              {% for post in recent_posts %}
+                <li>
+                  <a href="{{ url_for('post_detail', post_id=post.id) }}">{{ post.title }}</a>
+                  <span>
+                    {{ post.author.display_name }}（{{ post.author.username }}）
+                    · {{ post.created_at|timeago }}
+                    · {{ post.comments.count() }} 条回应
+                  </span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="admin-empty">还没有帖子。</p>
+          {% endif %}
+        </section>
+
+        <section class="admin-panel" aria-labelledby="admin-comments-heading">
+          <h2 id="admin-comments-heading">最新回应</h2>
+          {% if recent_comments %}
+            <ul class="admin-list">
+              {% for comment in recent_comments %}
+                <li>
+                  <p class="admin-comment-text">{{ comment.content|truncate(90, true, '…') }}</p>
+                  <span>
+                    {{ comment.author.display_name }}
+                    · 回应《<a href="{{ url_for('post_detail', post_id=comment.post_id) }}">{{ comment.post.title }}</a>》
+                    · {{ comment.created_at|timeago }}
+                  </span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="admin-empty">还没有回应。</p>
+          {% endif %}
+        </section>
+      </div>
+    </div>
+  </div>
+{% endblock %}

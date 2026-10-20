@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "_macros.html" import user_avatar %}
+
+{% block title %}耶稣爱你.胜利 · 在主爱中相遇{% endblock %}
+{% block body_class %}page-home{% endblock %}
+
+{% block content %}
+  <section class="hero" aria-label="耶稣爱你：无论你在哪里，祂都与你同在">
+    <img
+      src="{{ url_for('static', filename='banner.png') }}"
+      alt="耶稣爱你——无论你在哪里，祂都与你同在。晨光中的山峦与十字架。"
+      width="1774"
+      height="887"
+      fetchpriority="high"
+    >
+    <div class="hero-fade" aria-hidden="true"></div>
+  </section>
+
+  <section class="domain-note" aria-label="网站说明">
+    <div class="container">
+      <p>
+        <span class="domain-note-label">YSAN.WIN</span>
+        <span>本网站的域名的意思是：“耶稣爱你.胜利”的意思，耶稣爱你，战胜罪恶，战胜死亡，过得胜的生活！本网站是关于耶稣基督的信息分享与讨论网站，欢迎大家参与!</span>
+      </p>
+    </div>
+  </section>
+
+  {% if pagination.items %}
+    <section class="home-posts" id="latest-discussions" aria-label="社区帖子">
+      <div class="container container--narrow">
+        <div class="post-list">
+          {% for post in pagination.items %}
+            <a class="post-card" href="{{ url_for('post_detail', post_id=post.id) }}">
+              <div class="post-card-head">
+                <div class="post-author">
+                  {{ user_avatar(post.author) }}
+                  <span class="post-author-text">
+                    <strong>{{ post.author.display_name }}</strong>
+                    <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">
+                      {{ post.created_at|timeago }}
+                    </time>
+                  </span>
+                </div>
+                <span class="post-card-arrow" aria-hidden="true">↗</span>
+              </div>
+
+              <h3>{{ post.title }}</h3>
+              {% if post.content %}
+                <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>
+              {% endif %}
+
+              {% if post.media %}
+                <div class="home-post-media{% if post.media|length == 1 %} home-post-media--single{% endif %}">
+                  {% for item in post.media %}
+                    {% set media_url = url_for('media_file', filename=item.filename) %}
+                    <span class="home-post-media-item{% if item.kind == 'video' %} home-post-media-item--video{% endif %}"{% if item.kind == 'video' %} data-video-poster{% endif %}>
+                      {% if item.kind == 'image' %}
+                        <img src="{{ media_url }}" alt="{{ post.title }} - 图片 {{ loop.index }}" loading="lazy">
+                      {% else %}
+                        <video src="{{ media_url }}" preload="metadata" muted playsinline aria-hidden="true"></video>
+                      {% endif %}
+                    </span>
+                  {% endfor %}
+                </div>
+              {% endif %}
+
+              <div class="post-card-foot">
+                <span class="comment-count">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M20 11.5a7.5 7.5 0 0 1-10.8 6.7L4 20l1.8-5A7.5 7.5 0 1 1 20 11.5Z"/>
+                  </svg>
+                  {{ counts.get(post.id, 0) }} 条回应
+                </span>
+                <span class="read-more">继续阅读</span>
+              </div>
+            </a>
+          {% endfor %}
+        </div>
+
+        {% if pagination.pages > 1 %}
+          <nav class="pagination" aria-label="讨论分页">
+            {% if pagination.has_prev %}
+              <a class="pagination-link" href="{{ url_for('index', page=pagination.prev_num) }}#latest-discussions">← 上一页</a>
+            {% else %}
+              <span class="pagination-link is-disabled">← 上一页</span>
+            {% endif %}
+            <span class="pagination-status">第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
+            {% if pagination.has_next %}
+              <a class="pagination-link" href="{{ url_for('index', page=pagination.next_num) }}#latest-discussions">下一页 →</a>
+            {% else %}
+              <span class="pagination-link is-disabled">下一页 →</span>
+            {% endif %}
+          </nav>
+        {% endif %}
+      </div>
+    </section>
+  {% endif %}
+{% endblock %}

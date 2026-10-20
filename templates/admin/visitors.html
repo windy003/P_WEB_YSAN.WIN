@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}独立 IP · 管理后台{% endblock %}
+{% block head %}<meta name="robots" content="noindex,nofollow">{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ url_for('admin') }}">管理后台</a>
+        <span aria-hidden="true">/</span>
+        <span>独立 IP</span>
+      </nav>
+
+      <header class="page-heading admin-heading">
+        <div>
+          <h1>独立 IP</h1>
+          <p>共 {{ pagination.total }} 个独立 IP，点击 IP 可查看归属地。</p>
+        </div>
+        <a class="btn btn--ghost btn--small" href="{{ url_for('admin') }}">← 返回管理后台</a>
+      </header>
+
+      <section class="admin-panel">
+        {% if pagination.items %}
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th scope="col">IP 地址</th>
+                  <th scope="col">访问次数</th>
+                  <th scope="col">首次访问</th>
+                  <th scope="col">最近访问</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for visitor in pagination.items %}
+                  <tr>
+                    <td>
+                      <a href="{{ url_for('admin_visitor_detail', visitor_id=visitor.id) }}">{{ visitor.ip_address }}</a>
+                    </td>
+                    <td>{{ visitor.visit_count }}</td>
+                    <td>{{ visitor.first_seen|localtime }}</td>
+                    <td>
+                      {{ visitor.last_seen|localtime }}
+                      <span class="admin-table-sub">{{ visitor.last_seen|timeago }}</span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if pagination.pages > 1 %}
+            <nav class="pagination" aria-label="独立 IP 分页">
+              {% if pagination.has_prev %}
+                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.prev_num) }}">← 上一页</a>
+              {% else %}
+                <span class="pagination-link is-disabled">← 上一页</span>
+              {% endif %}
+              <span class="pagination-status">第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
+              {% if pagination.has_next %}
+                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.next_num) }}">下一页 →</a>
+              {% else %}
+                <span class="pagination-link is-disabled">下一页 →</span>
+              {% endif %}
+            </nav>
+          {% endif %}
+        {% else %}
+          <p class="admin-empty">还没有访问记录。</p>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}创建账号 · 耶稣爱你.胜利{% endblock %}
+{% block body_class %}page-auth{% endblock %}
+
+{% block content %}
+  <div class="auth-page">
+    <div class="container auth-grid">
+      <section class="auth-aside" aria-labelledby="auth-welcome">
+        <p class="eyebrow eyebrow--light">JOIN THE COMMUNITY</p>
+        <h1 id="auth-welcome">很高兴遇见你</h1>
+        <p class="auth-aside-copy">
+          每个人都有自己的故事，也都需要同行的人。
+          创建账号，在这里留下真实的分享，并成为他人生命中的一点微光。
+        </p>
+        <blockquote>
+          “你们是世上的光。城造在山上，是不能隐藏的。”
+          <cite>马太福音 5:14</cite>
+        </blockquote>
+        <span class="auth-cross" aria-hidden="true">✝</span>
+      </section>
+
+      <section class="auth-card" aria-labelledby="register-heading">
+        <p class="eyebrow eyebrow--muted">CREATE AN ACCOUNT</p>
+        <h2 id="register-heading">加入耶稣爱你.胜利</h2>
+        <p class="auth-intro">只需几步，就可以开始分享与交流。</p>
+
+        <form method="post" action="{{ url_for('register') }}" class="stack-form" novalidate>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+          <div class="form-field{% if errors.get('username') %} has-error{% endif %}">
+            <label for="register-username">用户名</label>
+            <input
+              type="text"
+              id="register-username"
+              name="username"
+              value="{{ form.username }}"
+              placeholder="2–20 个字符，可用中英文、数字和下划线"
+              autocomplete="username"
+              maxlength="20"
+              required
+              {% if errors.get('username') %}aria-invalid="true" aria-describedby="username-error"{% endif %}
+            >
+            {% if errors.get('username') %}
+              <p class="field-error" id="username-error">{{ errors.username }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field{% if errors.get('phone') %} has-error{% endif %}">
+            <label for="register-phone">手机号</label>
+            <input
+              type="tel"
+              id="register-phone"
+              name="phone"
+              value="{{ form.phone }}"
+              placeholder="请输入 11 位手机号"
+              inputmode="numeric"
+              autocomplete="tel"
+              pattern="1[3-9][0-9]{9}"
+              maxlength="11"
+              required
+              {% if errors.get('phone') %}aria-invalid="true" aria-describedby="phone-error"{% endif %}
+            >
+            <p class="field-hint">手机号仅用于登录，不会在社区中公开展示。</p>
+            {% if errors.get('phone') %}
+              <p class="field-error" id="phone-error">{{ errors.phone }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field{% if errors.get('password') %} has-error{% endif %}">
+            <label for="register-password">密码</label>
+            <div class="input-with-action">
+              <input
+                type="password"
+                id="register-password"
+                name="password"
+                placeholder="至少 6 位字符"
+                autocomplete="new-password"
+                minlength="6"
+                maxlength="128"
+                required
+                {% if errors.get('password') %}aria-invalid="true" aria-describedby="password-error"{% endif %}
+              >
+              <button type="button" class="password-toggle" data-password-toggle="register-password" aria-label="显示密码">显示</button>
+            </div>
+            {% if errors.get('password') %}
+              <p class="field-error" id="password-error">{{ errors.password }}</p>
+            {% endif %}
+          </div>
+
+          <div class="form-field{% if errors.get('confirm_password') %} has-error{% endif %}">
+            <label for="register-confirm">确认密码</label>
+            <div class="input-with-action">
+              <input
+                type="password"
+                id="register-confirm"
+                name="confirm_password"
+                placeholder="请再次输入密码"
+                autocomplete="new-password"
+                minlength="6"
+                maxlength="128"
+                required
+                {% if errors.get('confirm_password') %}aria-invalid="true" aria-describedby="confirm-error"{% endif %}
+              >
+              <button type="button" class="password-toggle" data-password-toggle="register-confirm" aria-label="显示密码">显示</button>
+            </div>
+            {% if errors.get('confirm_password') %}
+              <p class="field-error" id="confirm-error">{{ errors.confirm_password }}</p>
+            {% endif %}
+          </div>
+
+          <button type="submit" class="btn btn--primary btn--block">创建账号</button>
+        </form>
+
+        <p class="auth-switch">已经有账号了？<a href="{{ url_for('login') }}">直接登录</a></p>
+      </section>
+    </div>
+  </div>
+{% endblock %}
