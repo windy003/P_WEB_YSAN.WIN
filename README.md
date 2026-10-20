@@ -178,6 +178,52 @@ admin_password=你的管理员密码
 
 > 生产部署时请通过环境变量设置一个足够随机的 `SECRET_KEY`，关闭调试模式，并使用 HTTPS 与 `SESSION_COOKIE_SECURE=1`。开发服务器不适合直接暴露到公网，可使用 Waitress（Windows）或 Gunicorn（Linux）等 WSGI 服务器。
 
+### 访客 IP 与 Cloudflare
+
+应用默认只监听 `127.0.0.1`，前面通常还有一层本机反向代理（Nginx 或 cloudflared 隧道），再往前是 Cloudflare 的橙色云代理。因此直接读取 `request.remote_addr` 只会得到 `127.0.0.1`，后台的「24 小时独立 IP」会被压缩成 1 个。
+
+后台统计和短信频控现在通过 `get_client_ip()` 获取真实 IP，优先级为：
+
+1. `CF-Connecting-IP`（Cloudflare 会覆盖该请求头，最可靠）
+2. `X-Real-IP`
+3. `X-Forwarded-For` 的最右侧一项
+4. `REMOTE_ADDR`
+
+只有当直连对端是回环或内网地址（即本机反向代理）时才会信任上述请求头，避免源站被公网直连时伪造 IP。
+
+### Caddy 反向代理
+
+Caddy 的 `reverse_proxy` 默认会把 `CF-Connecting-IP` 原样转发给上游，并自动设置 `X-Forwarded-For`，因此无需为真实 IP 做额外配置，最基本的反代即可：
+
+```caddyfile
+ysan.win {
+    reverse_proxy 127.0.0.1:5012
+}
+```
+
+如果希望 Caddy 自己的访问日志和 `{http.request.remote.host}` 也显示真实访客 IP（而不是 Cloudflare 边缘节点），需要在全局配置里信任 Cloudflare 的 IP 段。Caddy 会据此从 Cloudflare 写入的 `X-Forwarded-For` 中解析出客户端地址：
+
+```caddyfile
+{
+    servers {
+        trusted_proxies static 173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32
+        trusted_proxies_strict
+    }
+}
+
+ysan.win {
+    reverse_proxy 127.0.0.1:5012
+}
+```
+
+Cloudflare 会覆盖每个经它代理的请求里的 `CF-Connecting-IP`，所以应用读取该请求头不会被访客伪造；前提是源站不能绕过 Cloudflare 被公网直接访问（只监听本机或防火墙只放行 Cloudflare 网段即可）。
+
+升级前已经记录的 `127.0.0.1` 访客记录不会自动消失，可在后台数据库执行以下语句清理：
+
+```sql
+DELETE FROM visitors WHERE ip_address = '127.0.0.1';
+```
+
 ## 运行测试
 
 ```powershell

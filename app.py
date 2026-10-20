@@ -326,6 +326,50 @@ IP_LOCATION_CACHE = {}
 IP_LOCATION_CACHE_TTL = timedelta(days=7)
 
 
+def get_client_ip():
+    """Return the real client IP when the app sits behind Cloudflare and a local proxy.
+
+    The Flask process listens on 127.0.0.1, so REMOTE_ADDR is always the local
+    reverse proxy (nginx or cloudflared), never the visitor. Cloudflare sets
+    CF-Connecting-IP on every proxied request, which is the authoritative value.
+    Headers are only trusted when the direct peer is loopback or private, so a
+    publicly reachable origin cannot be spoofed with a forged header.
+    """
+    remote = (request.remote_addr or "").strip()
+    try:
+        peer = ipaddress.ip_address(remote)
+    except ValueError:
+        return remote
+    if not (peer.is_loopback or peer.is_private):
+        return str(peer)
+
+    forwarded_for = [
+        part.strip()
+        for part in request.headers.get("X-Forwarded-For", "").split(",")
+        if part.strip()
+    ]
+    candidates = [
+        request.headers.get("CF-Connecting-IP", ""),
+        request.headers.get("X-Real-IP", ""),
+        # The right-most entry was appended by the nearest proxy and cannot be
+        # spoofed by the client, unlike entries further to the left.
+        *reversed(forwarded_for),
+        remote,
+    ]
+
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if candidate.startswith("[") and "]" in candidate:
+            candidate = candidate[1 : candidate.index("]")]
+        elif candidate.count(":") == 1:
+            candidate = candidate.split(":", 1)[0]
+        try:
+            return str(ipaddress.ip_address(candidate))
+        except ValueError:
+            continue
+    return remote
+
+
 def lookup_ip_location(ip_address):
     """Resolve an IP's location with a small in-memory cache."""
     try:
@@ -1158,7 +1202,7 @@ def create_app(test_config=None):
         if endpoint.startswith("admin"):
             return
 
-        ip_address = request.remote_addr
+        ip_address = get_client_ip()
         if not ip_address:
             return
 
@@ -1420,7 +1464,7 @@ def create_app(test_config=None):
                 429,
             )
 
-        ip_address = request.remote_addr or ""
+        ip_address = get_client_ip()
         if ip_address:
             ip_send_count = (
                 db.session.scalar(

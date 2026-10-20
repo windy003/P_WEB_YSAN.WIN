@@ -1006,6 +1006,48 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(lookup_ip_location("127.0.0.1"), "本地或内网地址")
         self.assertEqual(lookup_ip_location("192.168.1.8"), "本地或内网地址")
 
+    def test_visitor_ip_uses_cloudflare_header_behind_proxy(self):
+        with self.app.app_context():
+            db.session.query(Visitor).delete()
+            db.session.commit()
+
+        # Local proxy with Cloudflare in front: REMOTE_ADDR is the proxy itself.
+        self.client.get(
+            "/",
+            environ_overrides={
+                "REMOTE_ADDR": "127.0.0.1",
+                "HTTP_CF_CONNECTING_IP": "8.8.4.4",
+                "HTTP_X_FORWARDED_FOR": "203.0.113.9, 10.0.0.2",
+            },
+        )
+        with self.app.app_context():
+            visitor = db.session.scalar(
+                db.select(Visitor).where(Visitor.ip_address == "8.8.4.4")
+            )
+            self.assertIsNotNone(visitor)
+
+        # A direct public connection must not be able to spoof the header.
+        self.client.get(
+            "/",
+            environ_overrides={
+                "REMOTE_ADDR": "93.184.216.34",
+                "HTTP_CF_CONNECTING_IP": "8.8.8.8",
+            },
+        )
+        with self.app.app_context():
+            self.assertIsNotNone(
+                db.session.scalar(
+                    db.select(Visitor).where(
+                        Visitor.ip_address == "93.184.216.34"
+                    )
+                )
+            )
+            self.assertIsNone(
+                db.session.scalar(
+                    db.select(Visitor).where(Visitor.ip_address == "8.8.8.8")
+                )
+            )
+
     def test_visitor_pages_require_admin_login(self):
         response = self.client.get("/admin/visitors")
         self.assertEqual(response.status_code, 302)
