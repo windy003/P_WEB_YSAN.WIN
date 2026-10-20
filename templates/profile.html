@@ -14,7 +14,7 @@
 
       <header class="page-heading">
         <h1>个人资料</h1>
-        <p>更新你的头像和昵称，让弟兄姊妹更容易认出你。</p>
+        <p>更新你的头像、昵称和一句话介绍，让弟兄姊妹更容易认识你。</p>
       </header>
 
       <div class="profile-grid">
@@ -95,6 +95,36 @@
             </div>
             <div class="form-actions">
               <button type="submit" class="btn btn--primary btn--small">保存昵称</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="profile-card profile-card--wide" aria-labelledby="bio-heading">
+          <h2 id="bio-heading">一句话介绍</h2>
+          <p class="profile-card-intro">用一句话介绍自己，让弟兄姊妹更认识你。</p>
+
+          <form method="post" action="{{ url_for('update_bio') }}" class="stack-form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-field{% if errors.get('bio') %} has-error{% endif %}">
+              <div class="label-row">
+                <label for="profile-bio">介绍自己</label>
+                <span class="char-hint" data-char-count-for="profile-bio" data-max="{{ bio_max_length }}">0 / {{ bio_max_length }}</span>
+              </div>
+              <input
+                type="text"
+                id="profile-bio"
+                name="bio"
+                value="{{ bio_form }}"
+                placeholder="例如：在主爱中学习、工作，也愿意与你分享生命中的恩典。"
+                maxlength="{{ bio_max_length }}"
+                {% if errors.get('bio') %}aria-invalid="true" aria-describedby="bio-error"{% endif %}
+              >
+              {% if errors.get('bio') %}
+                <p class="field-error" id="bio-error">{{ errors.bio }}</p>
+              {% endif %}
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn--primary btn--small">保存介绍</button>
             </div>
           </form>
         </section>

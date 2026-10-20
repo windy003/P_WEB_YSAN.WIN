@@ -56,6 +56,7 @@ ALLOWED_MEDIA_EXTENSIONS = {
 }
 ALLOWED_AVATAR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 DISPLAY_NAME_MAX_LENGTH = 20
+BIO_MAX_LENGTH = 80
 
 db = SQLAlchemy()
 
@@ -382,6 +383,7 @@ class User(db.Model):
     username = db.Column(db.String(40), nullable=False)
     username_key = db.Column(db.String(40), nullable=False, unique=True, index=True)
     nickname = db.Column(db.String(20), nullable=True)
+    bio = db.Column(db.String(80), nullable=True)
     avatar_filename = db.Column(db.String(120), nullable=True)
     phone = db.Column(db.String(20), nullable=False, unique=True, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
@@ -887,6 +889,7 @@ def create_app(test_config=None):
             "avatar_max_bytes": app.config["AVATAR_MAX_BYTES"],
             "avatar_max_mb": app.config["AVATAR_MAX_BYTES"] // (1024 * 1024),
             "display_name_max_length": DISPLAY_NAME_MAX_LENGTH,
+            "bio_max_length": BIO_MAX_LENGTH,
         }
 
     @app.template_filter("timeago")
@@ -1360,6 +1363,7 @@ def create_app(test_config=None):
         return render_template(
             "profile.html",
             nickname_form=g.user.nickname or "",
+            bio_form=g.user.bio or "",
             errors={},
         )
 
@@ -1384,6 +1388,7 @@ def create_app(test_config=None):
                 render_template(
                     "profile.html",
                     nickname_form=nickname,
+                    bio_form=g.user.bio or "",
                     errors=errors,
                 ),
                 400,
@@ -1395,6 +1400,33 @@ def create_app(test_config=None):
             flash("昵称已更新。", "success")
         else:
             flash("已恢复使用用户名作为显示名称。", "success")
+        return redirect(url_for("profile"))
+
+    @app.post("/profile/bio")
+    @login_required
+    def update_bio():
+        bio = request.form.get("bio", "").strip()
+
+        if len(bio) > BIO_MAX_LENGTH:
+            errors = {
+                "bio": f"一句话介绍不能超过 {BIO_MAX_LENGTH} 个字符。"
+            }
+            return (
+                render_template(
+                    "profile.html",
+                    nickname_form=g.user.nickname or "",
+                    bio_form=bio,
+                    errors=errors,
+                ),
+                400,
+            )
+
+        g.user.bio = bio or None
+        db.session.commit()
+        if bio:
+            flash("一句话介绍已更新。", "success")
+        else:
+            flash("已清空一句话介绍。", "success")
         return redirect(url_for("profile"))
 
     @app.post("/profile/avatar")
@@ -1794,6 +1826,10 @@ def create_app(test_config=None):
                         "ALTER TABLE users "
                         "ADD COLUMN avatar_filename VARCHAR(120)"
                     )
+                )
+            if "bio" not in columns:
+                db.session.execute(
+                    text("ALTER TABLE users ADD COLUMN bio VARCHAR(80)")
                 )
             db.session.commit()
 
