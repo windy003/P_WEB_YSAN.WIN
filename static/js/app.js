@@ -1458,4 +1458,10 @@
       avatarLightbox.close();
     }
   });
+
+  document.querySelectorAll("[data-message-thread]").forEach((thread) => {
+    if (thread.querySelector(".message-row")) {
+      thread.scrollTop = thread.scrollHeight;
+    }
+  });
 })();

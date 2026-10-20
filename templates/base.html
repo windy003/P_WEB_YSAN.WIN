@@ -32,10 +32,21 @@
       <nav class="main-nav" aria-label="主导航">
         <a href="{{ url_for('index') }}"{% if request.endpoint == 'index' %} class="is-current" aria-current="page"{% endif %}>首页</a>
         <a href="{{ url_for('new_post') }}"{% if request.endpoint == 'new_post' %} class="is-current" aria-current="page"{% endif %}>发帖</a>
+        {% if g.user %}
+          <a href="{{ url_for('message_inbox') }}"{% if request.endpoint in ('message_inbox', 'message_thread') %} class="is-current" aria-current="page"{% endif %}>
+            私信{% if unread_message_count %}<span class="nav-badge">{{ unread_message_count if unread_message_count < 100 else "99+" }}</span>{% endif %}
+          </a>
+        {% endif %}
       </nav>
 
       <div class="header-account">
         {% if g.user %}
+          <a class="mobile-message-link" href="{{ url_for('message_inbox') }}" title="私信" aria-label="私信{% if unread_message_count %}（{{ unread_message_count }} 条未读）{% endif %}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 11.5a8.5 8.5 0 0 1-12.2 7.6L4 21l1.9-5.2A8.5 8.5 0 1 1 21 11.5Z"/>
+            </svg>
+            {% if unread_message_count %}<span class="nav-badge">{{ unread_message_count if unread_message_count < 100 else "99+" }}</span>{% endif %}
+          </a>
           <a class="mobile-compose-link" href="{{ url_for('new_post') }}">发帖</a>
           <a class="user-chip" href="{{ url_for('profile') }}" title="个人资料：点击修改头像和昵称">
             {{ user_avatar(g.user, "small") }}

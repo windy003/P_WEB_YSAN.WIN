@@ -14,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app import (  # noqa: E402
     Comment,
+    Message,
     Post,
     PostMedia,
     User,
@@ -1344,6 +1345,190 @@ class CommunityTestCase(unittest.TestCase):
         with self.app.app_context():
             self.assertIsNone(self.current_user().avatar_filename)
         self.assertEqual(list(self.avatar_dir.glob("*")), [])
+
+    def user_id_for(self, username):
+        with self.app.app_context():
+            return db.session.scalar(
+                db.select(User.id).where(User.username == username)
+            )
+
+    def register_second_user(self):
+        self.logout()
+        return self.register(username="晨光", phone="13900139000")
+
+    def test_user_profile_has_private_message_button(self):
+        self.register(username="恩雨", phone="13800138000")
+        first_id = self.user_id_for("恩雨")
+        self.register_second_user()
+        second_id = self.user_id_for("晨光")
+
+        html = self.client.get(f"/users/{first_id}").get_data(as_text=True)
+        self.assertIn(f"/messages/{first_id}", html)
+        self.assertIn("私信", html)
+
+        html = self.client.get(f"/users/{second_id}").get_data(as_text=True)
+        self.assertIn("我的私信", html)
+        self.assertNotIn(f"/messages/{second_id}", html)
+
+    def test_guest_is_redirected_from_private_messages_to_login(self):
+        response = self.client.get("/messages")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+        response = self.client.get("/messages/1")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+
+    def test_users_can_exchange_private_messages(self):
+        self.register(username="恩雨", phone="13800138000")
+        first_id = self.user_id_for("恩雨")
+        self.register_second_user()
+        second_id = self.user_id_for("晨光")
+
+        token = self.csrf_token(f"/messages/{first_id}")
+        response = self.client.post(
+            f"/messages/{first_id}",
+            data={
+                "csrf_token": token,
+                "body": "主内平安，很高兴认识你。",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn("主内平安，很高兴认识你。", html)
+        self.assertIn("聊天记录保留最近 7 天", html)
+
+        with self.app.app_context():
+            message = db.session.scalar(db.select(Message))
+            self.assertEqual(message.sender_id, second_id)
+            self.assertEqual(message.recipient_id, first_id)
+            self.assertIsNone(message.read_at)
+
+        self.logout()
+        response = self.login_with_password("恩雨")
+        inbox_html = self.client.get("/messages").get_data(as_text=True)
+        self.assertIn("晨光", inbox_html)
+        self.assertIn("主内平安，很高兴认识你。", inbox_html)
+
+        response = self.client.get(f"/messages/{second_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("主内平安，很高兴认识你。", response.get_data(as_text=True))
+        with self.app.app_context():
+            message = db.session.scalar(db.select(Message))
+            self.assertIsNotNone(message.read_at)
+
+        token = self.csrf_token(f"/messages/{second_id}")
+        self.client.post(
+            f"/messages/{second_id}",
+            data={"csrf_token": token, "body": "平安，愿主赐福与你。"},
+            follow_redirects=True,
+        )
+        with self.app.app_context():
+            bodies = db.session.scalars(
+                db.select(Message.body).order_by(Message.id)
+            ).all()
+            self.assertEqual(
+                bodies,
+                ["主内平安，很高兴认识你。", "平安，愿主赐福与你。"],
+            )
+
+    def test_private_messages_are_not_visible_to_other_users(self):
+        self.register(username="恩雨", phone="13800138000")
+        first_id = self.user_id_for("恩雨")
+        self.register_second_user()
+        second_id = self.user_id_for("晨光")
+
+        token = self.csrf_token(f"/messages/{first_id}")
+        self.client.post(
+            f"/messages/{first_id}",
+            data={"csrf_token": token, "body": "只写给恩雨的私信。"},
+            follow_redirects=True,
+        )
+
+        self.logout()
+        self.register(username="小羊", phone="13700137000")
+        third_id = self.user_id_for("小羊")
+
+        response = self.client.get(f"/messages/{first_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("只写给恩雨的私信。", response.get_data(as_text=True))
+        self.assertNotIn(
+            "只写给恩雨的私信。",
+            self.client.get("/messages").get_data(as_text=True),
+        )
+        # 与第二位用户是同一段对话，但第三方看到的是自己的空会话。
+        response = self.client.get(f"/messages/{second_id}")
+        self.assertNotIn("只写给恩雨的私信。", response.get_data(as_text=True))
+        self.assertNotEqual(third_id, first_id)
+
+    def test_private_message_validation_and_self_message(self):
+        self.register(username="恩雨", phone="13800138000")
+        first_id = self.user_id_for("恩雨")
+        self.register_second_user()
+        second_id = self.user_id_for("晨光")
+
+        token = self.csrf_token(f"/messages/{first_id}")
+        response = self.client.post(
+            f"/messages/{first_id}",
+            data={"csrf_token": token, "body": "   "},
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("私信内容需为 1–1000 个字符", response.get_data(as_text=True))
+
+        token = self.csrf_token(f"/messages/{first_id}")
+        response = self.client.post(
+            f"/messages/{first_id}",
+            data={"csrf_token": token, "body": "长" * 1001},
+        )
+        self.assertEqual(response.status_code, 400)
+
+        token = self.csrf_token("/messages")
+        response = self.client.post(
+            f"/messages/{second_id}",
+            data={"csrf_token": token, "body": "写给自己"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/messages", response.headers["Location"])
+
+        with self.app.app_context():
+            self.assertEqual(
+                db.session.scalar(db.select(db.func.count(Message.id))), 0
+            )
+
+    def test_expired_private_messages_are_purged(self):
+        self.register(username="恩雨", phone="13800138000")
+        first_id = self.user_id_for("恩雨")
+        self.register_second_user()
+        second_id = self.user_id_for("晨光")
+
+        with self.app.app_context():
+            now = utcnow()
+            db.session.add_all(
+                [
+                    Message(
+                        sender_id=second_id,
+                        recipient_id=first_id,
+                        body="八天前的旧私信",
+                        created_at=now - timedelta(days=8),
+                    ),
+                    Message(
+                        sender_id=second_id,
+                        recipient_id=first_id,
+                        body="六天前的私信",
+                        created_at=now - timedelta(days=6),
+                    ),
+                ]
+            )
+            db.session.commit()
+
+        html = self.client.get("/messages").get_data(as_text=True)
+        self.assertNotIn("八天前的旧私信", html)
+        self.assertIn("六天前的私信", html)
+
+        with self.app.app_context():
+            bodies = db.session.scalars(db.select(Message.body)).all()
+            self.assertEqual(bodies, ["六天前的私信"])
 
 
 if __name__ == "__main__":

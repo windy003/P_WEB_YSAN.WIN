@@ -29,7 +29,19 @@
             <span>{{ post_count }} 篇帖子</span>
           </p>
           {% if is_self %}
-            <a class="btn btn--ghost btn--small user-profile-edit" href="{{ url_for('profile') }}">编辑个人资料</a>
+            <div class="user-profile-actions">
+              <a class="btn btn--ghost btn--small" href="{{ url_for('profile') }}">编辑个人资料</a>
+              <a class="btn btn--primary btn--small" href="{{ url_for('message_inbox') }}">
+                我的私信{% if unread_message_count %}<span class="profile-message-badge">{{ unread_message_count if unread_message_count < 100 else "99+" }}</span>{% endif %}
+              </a>
+            </div>
+          {% else %}
+            <a class="btn btn--primary btn--small user-profile-message" href="{{ url_for('message_thread', user_id=profile_user.id) }}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 11.5a8.5 8.5 0 0 1-12.2 7.6L4 21l1.9-5.2A8.5 8.5 0 1 1 21 11.5Z"/>
+              </svg>
+              私信
+            </a>
           {% endif %}
         </div>
       </header>

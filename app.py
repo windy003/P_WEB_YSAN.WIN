@@ -36,7 +36,7 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
-from sqlalchemy import delete, func, inspect, text
+from sqlalchemy import and_, delete, func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -60,6 +60,9 @@ ALLOWED_MEDIA_EXTENSIONS = {
 ALLOWED_AVATAR_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 DISPLAY_NAME_MAX_LENGTH = 20
 BIO_MAX_LENGTH = 80
+MESSAGE_MAX_LENGTH = 1000
+MESSAGE_RETENTION_DAYS = 7
+MESSAGE_RETENTION = timedelta(days=MESSAGE_RETENTION_DAYS)
 
 db = SQLAlchemy()
 
@@ -449,6 +452,26 @@ class Comment(db.Model):
     author = db.relationship("User", back_populates="comments")
 
 
+class Message(db.Model):
+    __tablename__ = "messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    sender_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    recipient_id = db.Column(
+        db.Integer, db.ForeignKey("users.id"), nullable=False, index=True
+    )
+    body = db.Column(db.Text, nullable=False)
+    created_at = db.Column(
+        db.DateTime, nullable=False, default=utcnow, index=True
+    )
+    read_at = db.Column(db.DateTime, nullable=True)
+
+    sender = db.relationship("User", foreign_keys=[sender_id])
+    recipient = db.relationship("User", foreign_keys=[recipient_id])
+
+
 class PostMedia(db.Model):
     __tablename__ = "post_media"
 
@@ -482,6 +505,13 @@ class Visitor(db.Model):
     last_seen = db.Column(
         db.DateTime, nullable=False, default=utcnow, index=True
     )
+
+
+def purge_expired_messages():
+    """Drop private messages older than the retention window."""
+    cutoff = utcnow() - MESSAGE_RETENTION
+    db.session.execute(delete(Message).where(Message.created_at < cutoff))
+    db.session.commit()
 
 
 def load_or_create_secret_key(instance_path):
@@ -1158,10 +1188,37 @@ def create_app(test_config=None):
             db.session.rollback()
             app.logger.exception("Could not record visitor")
 
+    @app.before_request
+    def purge_expired_messages_periodically():
+        now_ts = time.time()
+        if now_ts - app.extensions.get("message_purge_at", 0) < 3600:
+            return
+        app.extensions["message_purge_at"] = now_ts
+        try:
+            purge_expired_messages()
+        except Exception:
+            db.session.rollback()
+            app.logger.exception("Could not purge expired messages")
+
     @app.context_processor
     def inject_template_globals():
+        unread_message_count = 0
+        if getattr(g, "user", None) is not None:
+            unread_message_count = (
+                db.session.scalar(
+                    db.select(func.count(Message.id)).where(
+                        Message.recipient_id == g.user.id,
+                        Message.read_at.is_(None),
+                        Message.created_at >= utcnow() - MESSAGE_RETENTION,
+                    )
+                )
+                or 0
+            )
         return {
             "csrf_token": session.get("csrf_token", ""),
+            "unread_message_count": unread_message_count,
+            "message_max_length": MESSAGE_MAX_LENGTH,
+            "message_retention_days": MESSAGE_RETENTION_DAYS,
             "media_max_files": app.config["MEDIA_MAX_FILES"],
             "media_max_image_bytes": app.config["MEDIA_MAX_IMAGE_BYTES"],
             "media_max_video_bytes": app.config["MEDIA_MAX_VIDEO_BYTES"],
@@ -1705,6 +1762,123 @@ def create_app(test_config=None):
             counts=counts,
             post_count=user.posts.count(),
             is_self=g.user is not None and g.user.id == user.id,
+        )
+
+    @app.get("/messages")
+    @login_required
+    def message_inbox():
+        purge_expired_messages()
+        cutoff = utcnow() - MESSAGE_RETENTION
+        messages = db.session.scalars(
+            db.select(Message)
+            .where(
+                or_(
+                    Message.sender_id == g.user.id,
+                    Message.recipient_id == g.user.id,
+                ),
+                Message.created_at >= cutoff,
+            )
+            .options(
+                selectinload(Message.sender),
+                selectinload(Message.recipient),
+            )
+            .order_by(Message.created_at.desc(), Message.id.desc())
+        ).all()
+
+        conversations = {}
+        for message in messages:
+            other = (
+                message.recipient
+                if message.sender_id == g.user.id
+                else message.sender
+            )
+            if other is None:
+                continue
+            conversation = conversations.get(other.id)
+            if conversation is None:
+                conversation = {"user": other, "latest": message, "unread": 0}
+                conversations[other.id] = conversation
+            if message.recipient_id == g.user.id and message.read_at is None:
+                conversation["unread"] += 1
+
+        return render_template(
+            "messages.html",
+            conversations=list(conversations.values()),
+            retention_days=MESSAGE_RETENTION_DAYS,
+        )
+
+    @app.route("/messages/<int:user_id>", methods=["GET", "POST"])
+    @login_required
+    def message_thread(user_id):
+        purge_expired_messages()
+        other_user = db.session.get(User, user_id)
+        if other_user is None:
+            abort(404)
+        if other_user.id == g.user.id:
+            flash("不能给自己发送私信。", "info")
+            return redirect(url_for("message_inbox"))
+
+        error = None
+        draft = ""
+        if request.method == "POST":
+            draft = request.form.get("body", "").strip()
+            if not 1 <= len(draft) <= MESSAGE_MAX_LENGTH:
+                error = f"私信内容需为 1–{MESSAGE_MAX_LENGTH} 个字符。"
+            else:
+                message = Message(
+                    sender=g.user, recipient=other_user, body=draft
+                )
+                db.session.add(message)
+                db.session.commit()
+                return redirect(
+                    url_for(
+                        "message_thread",
+                        user_id=other_user.id,
+                        _anchor=f"message-{message.id}",
+                    )
+                )
+
+        cutoff = utcnow() - MESSAGE_RETENTION
+        conversation = db.session.scalars(
+            db.select(Message)
+            .where(
+                Message.created_at >= cutoff,
+                or_(
+                    and_(
+                        Message.sender_id == g.user.id,
+                        Message.recipient_id == other_user.id,
+                    ),
+                    and_(
+                        Message.sender_id == other_user.id,
+                        Message.recipient_id == g.user.id,
+                    ),
+                ),
+            )
+            .options(selectinload(Message.sender))
+            .order_by(Message.created_at.asc(), Message.id.asc())
+        ).all()
+
+        unread = [
+            message
+            for message in conversation
+            if message.recipient_id == g.user.id and message.read_at is None
+        ]
+        if unread:
+            now = utcnow()
+            for message in unread:
+                message.read_at = now
+            db.session.commit()
+
+        return (
+            render_template(
+                "message_thread.html",
+                other_user=other_user,
+                messages=conversation,
+                error=error,
+                draft=draft,
+                retention_days=MESSAGE_RETENTION_DAYS,
+            ),
+            400 if error else 200,
         )
 
     @app.get("/profile")

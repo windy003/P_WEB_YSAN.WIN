@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import user_avatar %}
+
+{% block title %}私信 · 耶稣爱你.胜利{% endblock %}
+{% block body_class %}page-messages{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container container--narrow">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <span>私信</span>
+      </nav>
+
+      <header class="page-heading">
+        <h1>私信</h1>
+        <p>与弟兄姊妹一对一交流。聊天记录仅保留最近 {{ retention_days }} 天，过期后会自动清除。</p>
+      </header>
+
+      {% if conversations %}
+        <ul class="conversation-list">
+          {% for conversation in conversations %}
+            <li class="conversation-item{% if conversation.unread %} has-unread{% endif %}">
+              <a class="conversation-link" href="{{ url_for('message_thread', user_id=conversation.user.id) }}">
+                {{ user_avatar(conversation.user, "large") }}
+                <span class="conversation-main">
+                  <span class="conversation-head">
+                    <strong>{{ conversation.user.display_name }}</strong>
+                    <time datetime="{{ conversation.latest.created_at.isoformat() }}Z" title="{{ conversation.latest.created_at|localtime }}">
+                      {{ conversation.latest.created_at|timeago }}
+                    </time>
+                  </span>
+                  <span class="conversation-preview">
+                    {% if conversation.latest.sender_id == g.user.id %}<span class="conversation-you">我：</span>{% endif %}{{ conversation.latest.body|truncate(48, true, '…') }}
+                  </span>
+                </span>
+                {% if conversation.unread %}
+                  <span class="conversation-badge" aria-label="{{ conversation.unread }} 条未读私信">{{ conversation.unread if conversation.unread < 100 else "99+" }}</span>
+                {% endif %}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="discussion-empty">
+          <p>还没有私信。去弟兄姊妹的个人主页打个招呼吧。</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+{% endblock %}

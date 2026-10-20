@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% from "_macros.html" import user_avatar %}
+
+{% block title %}与 {{ other_user.display_name }} 的私信 · 耶稣爱你.胜利{% endblock %}
+{% block body_class %}page-messages{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container container--narrow">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <a href="{{ url_for('message_inbox') }}">私信</a>
+        <span aria-hidden="true">/</span>
+        <span>{{ other_user.display_name }}</span>
+      </nav>
+
+      <header class="message-thread-head">
+        <a class="message-thread-user" href="{{ url_for('user_profile', user_id=other_user.id) }}" title="查看 {{ other_user.display_name }} 的个人主页">
+          {{ user_avatar(other_user, "large") }}
+          <span class="message-thread-user-text">
+            <strong>{{ other_user.display_name }}</strong>
+            <small>查看个人主页</small>
+          </span>
+        </a>
+        <p class="message-retention">聊天记录保留最近 {{ retention_days }} 天</p>
+      </header>
+
+      <div class="message-thread" data-message-thread>
+        {% if messages %}
+          <ol class="message-list">
+            {% for message in messages %}
+              <li class="message-row{% if message.sender_id == g.user.id %} is-own{% endif %}" id="message-{{ message.id }}">
+                <div class="message-bubble">
+                  <p class="message-body">{{ message.body }}</p>
+                  <time class="message-time" datetime="{{ message.created_at.isoformat() }}Z" title="{{ message.created_at|localtime }}">
+                    {{ message.created_at|timeago }}
+                  </time>
+                </div>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <div class="discussion-empty message-empty">
+            <p>还没有聊天记录，先向 {{ other_user.display_name }} 打个招呼吧。</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <form method="post" action="{{ url_for('message_thread', user_id=other_user.id) }}" class="message-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <div class="label-row">
+          <label for="message-body">写给 {{ other_user.display_name }}</label>
+          <span class="char-hint" data-char-count-for="message-body" data-max="{{ message_max_length }}">0 / {{ message_max_length }}</span>
+        </div>
+        <textarea
+          id="message-body"
+          name="body"
+          rows="3"
+          maxlength="{{ message_max_length }}"
+          placeholder="在这里写下你的问候或分享……"
+          required
+          {% if error %}aria-invalid="true" aria-describedby="message-error"{% endif %}
+        >{{ draft }}</textarea>
+        {% if error %}
+          <p class="field-error" id="message-error">{{ error }}</p>
+        {% endif %}
+        <div class="form-actions">
+          <button type="submit" class="btn btn--primary btn--small">发送私信</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
