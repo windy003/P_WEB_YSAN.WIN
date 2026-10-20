@@ -481,10 +481,11 @@
       if (!item.posterReady) {
         return null;
       }
+      const timeout = Number.isFinite(item.duration) ? 1200 : 3000;
       await Promise.race([
         item.posterReady,
         new Promise((resolve) => {
-          window.setTimeout(resolve, 3000);
+          window.setTimeout(resolve, timeout);
         }),
       ]);
       return item.posterBlob;
@@ -495,17 +496,26 @@
         return;
       }
       const blob = await waitForPoster(item);
-      if (!blob) {
+      const duration =
+        Number.isFinite(item.duration) && item.duration > 0
+          ? item.duration
+          : null;
+      if (!blob && duration === null) {
         return;
       }
       const data = new FormData();
       data.append("csrf_token", csrfToken);
       data.append("token", mediaToken);
-      data.append("poster", blob, "poster.jpg");
+      if (blob) {
+        data.append("poster", blob, "poster.jpg");
+      }
+      if (duration !== null) {
+        data.append("duration", duration.toFixed(3));
+      }
       try {
         await postJson(item, posterUrl, data);
       } catch {
-        // The poster is optional; the video itself is already uploaded.
+        // Poster/duration metadata is optional; the media is already uploaded.
       }
     };
 
@@ -754,6 +764,7 @@
             () => {
               durationBadge.textContent = formatMediaDuration(video.duration);
               if (Number.isFinite(video.duration) && video.duration > 0) {
+                item.duration = video.duration;
                 video.currentTime = thumbnailTime(video.duration, 0);
               }
             },
@@ -931,6 +942,7 @@
           key,
           kind,
           size: file.size,
+          duration: null,
           status: "uploading",
           progress: 0,
           token: null,
@@ -1064,12 +1076,33 @@
     playIcon.textContent = "▶";
     overlay.append(playIcon);
 
+    const durationText = figure.dataset.duration || "";
+    const durationBadge = document.createElement("span");
+    durationBadge.className = "video-thumb-duration";
+    durationBadge.textContent = durationText || "--:--";
+    durationBadge.hidden = !durationText;
+    overlay.append(durationBadge);
+
     figure.append(overlay);
 
     const posterSource = video.getAttribute("poster");
     if (posterSource) {
       image.src = posterSource;
       overlay.classList.add("is-ready");
+    }
+
+    if (!durationText) {
+      video.preload = "metadata";
+      video.addEventListener(
+        "loadedmetadata",
+        () => {
+          if (Number.isFinite(video.duration) && video.duration > 0) {
+            durationBadge.textContent = formatMediaDuration(video.duration);
+            durationBadge.hidden = false;
+          }
+        },
+        { once: true },
+      );
     }
 
     overlay.addEventListener("click", () => {

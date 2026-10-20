@@ -21,6 +21,7 @@ from app import (  # noqa: E402
     create_app,
     db,
     lookup_ip_location,
+    mp4_duration_seconds,
     utcnow,
 )
 
@@ -513,6 +514,7 @@ class CommunityTestCase(unittest.TestCase):
                 "csrf_token": token,
                 "token": media_token,
                 "poster": (BytesIO(poster_data), "poster.jpg"),
+                "duration": "245",
             },
             content_type="multipart/form-data",
         )
@@ -530,6 +532,7 @@ class CommunityTestCase(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertEqual(create.status_code, 200)
+        self.assertIn('data-duration="04:05"', create.get_data(as_text=True))
 
         with self.app.app_context():
             media = db.session.scalar(
@@ -544,6 +547,7 @@ class CommunityTestCase(unittest.TestCase):
         home_html = self.client.get("/").get_data(as_text=True)
         self.assertIn(f"/posters/{poster_name}", home_html)
         self.assertNotIn(f"/media/{media_filename}", home_html)
+        self.assertIn("04:05", home_html)
 
         poster_response = self.client.get(f"/posters/{poster_name}")
         self.assertEqual(poster_response.status_code, 200)
@@ -557,6 +561,23 @@ class CommunityTestCase(unittest.TestCase):
             follow_redirects=True,
         )
         self.assertFalse((self.poster_dir / poster_name).exists())
+
+    def test_mp4_duration_parser_reads_mvhd(self):
+        mvhd_payload = (
+            b"\x00\x00\x00\x00"
+            + (0).to_bytes(4, "big")
+            + (0).to_bytes(4, "big")
+            + (1000).to_bytes(4, "big")
+            + (245000).to_bytes(4, "big")
+            + b"\x00" * 80
+        )
+        mvhd = (8 + len(mvhd_payload)).to_bytes(4, "big") + b"mvhd" + mvhd_payload
+        moov = (8 + len(mvhd)).to_bytes(4, "big") + b"moov" + mvhd
+        ftyp = (24).to_bytes(4, "big") + b"ftyp" + b"mp42" + b"\x00" * 12
+
+        path = Path(self.temp_dir.name) / "sample.mp4"
+        path.write_bytes(ftyp + moov)
+        self.assertAlmostEqual(mp4_duration_seconds(path), 245.0, places=1)
 
     def test_media_size_limits_allow_300_mb_videos(self):
         self.assertEqual(

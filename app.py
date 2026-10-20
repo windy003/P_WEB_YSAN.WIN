@@ -664,15 +664,98 @@ def poster_filename_for(media_filename):
     return Path(media_filename).stem + ".jpg"
 
 
+def duration_filename_for(media_filename):
+    return Path(media_filename).stem + ".duration"
+
+
 def delete_poster_file(app, media_filename):
+    poster_folder = Path(app.config["POSTER_FOLDER"])
+    for name in (
+        poster_filename_for(media_filename),
+        duration_filename_for(media_filename),
+    ):
+        try:
+            (poster_folder / name).unlink(missing_ok=True)
+        except OSError:
+            app.logger.warning(
+                "Could not delete %s for %s", name, media_filename, exc_info=True
+            )
+
+
+def _read_mp4_box_header(handle, offset, file_size):
+    handle.seek(offset)
+    header = handle.read(8)
+    if len(header) < 8:
+        return None
+    size = int.from_bytes(header[:4], "big")
+    box_type = header[4:8]
+    header_size = 8
+    if size == 1:
+        large = handle.read(8)
+        if len(large) < 8:
+            return None
+        size = int.from_bytes(large, "big")
+        header_size = 16
+    elif size == 0:
+        size = file_size - offset
+    if size < header_size:
+        return None
+    return box_type, offset + header_size, min(offset + size, file_size)
+
+
+def mp4_duration_seconds(path):
+    """Read the movie duration from an MP4/MOV mvhd box without decoding it."""
     try:
-        (Path(app.config["POSTER_FOLDER"]) / poster_filename_for(media_filename)).unlink(
-            missing_ok=True
-        )
+        file_size = path.stat().st_size
     except OSError:
-        app.logger.warning(
-            "Could not delete poster for %s", media_filename, exc_info=True
-        )
+        return None
+
+    try:
+        with path.open("rb") as handle:
+            offset = 0
+            moov = None
+            while offset + 8 <= file_size:
+                header = _read_mp4_box_header(handle, offset, file_size)
+                if header is None:
+                    break
+                box_type, payload_start, box_end = header
+                if box_type == b"moov":
+                    moov = (payload_start, box_end)
+                    break
+                if box_end <= offset:
+                    break
+                offset = box_end
+
+            if moov is None:
+                return None
+
+            offset = moov[0]
+            while offset + 8 <= moov[1]:
+                header = _read_mp4_box_header(handle, offset, moov[1])
+                if header is None:
+                    break
+                box_type, payload_start, box_end = header
+                if box_type == b"mvhd":
+                    handle.seek(payload_start)
+                    version = handle.read(1)
+                    handle.seek(payload_start + 4)
+                    if version == b"\x01":
+                        handle.read(16)
+                        timescale = int.from_bytes(handle.read(4), "big")
+                        duration = int.from_bytes(handle.read(8), "big")
+                    else:
+                        handle.read(8)
+                        timescale = int.from_bytes(handle.read(4), "big")
+                        duration = int.from_bytes(handle.read(4), "big")
+                    if timescale:
+                        return duration / timescale
+                    return None
+                if box_end <= offset:
+                    break
+                offset = box_end
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def media_total_size(media_folder, items):
@@ -1098,6 +1181,34 @@ def create_app(test_config=None):
         if (Path(app.config["POSTER_FOLDER"]) / poster_name).is_file():
             return url_for("poster_file", filename=poster_name)
         return None
+
+    @app.template_global()
+    def media_duration_label(media_filename):
+        poster_folder = Path(app.config["POSTER_FOLDER"])
+        sidecar = poster_folder / duration_filename_for(media_filename)
+        seconds = None
+        try:
+            seconds = float(sidecar.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            extension = Path(media_filename).suffix.lower()
+            if extension in (".mp4", ".m4v", ".mov"):
+                media_path = Path(app.config["MEDIA_FOLDER"]) / media_filename
+                seconds = mp4_duration_seconds(media_path)
+                if seconds:
+                    try:
+                        poster_folder.mkdir(parents=True, exist_ok=True)
+                        sidecar.write_text(f"{seconds:.3f}", encoding="utf-8")
+                    except OSError:
+                        pass
+
+        if not seconds or seconds <= 0:
+            return ""
+        total = int(round(seconds))
+        hours, remainder = divmod(total, 3600)
+        minutes, secs = divmod(remainder, 60)
+        if hours:
+            return f"{hours}:{minutes:02d}:{secs:02d}"
+        return f"{minutes:02d}:{secs:02d}"
 
     @app.template_filter("timeago")
     def timeago(value):
@@ -1745,8 +1856,17 @@ def create_app(test_config=None):
             return jsonify(ok=False, message="视频信息无效。"), 400
 
         poster = request.files.get("poster")
-        if poster is None or not poster.filename:
-            return jsonify(ok=False, message="缺少视频封面。"), 400
+        has_poster = poster is not None and bool(poster.filename)
+        duration = None
+        try:
+            value = float(request.form.get("duration", ""))
+            if 0 < value <= 7 * 24 * 60 * 60:
+                duration = value
+        except (TypeError, ValueError):
+            duration = None
+
+        if not has_poster and duration is None:
+            return jsonify(ok=False, message="缺少视频封面或时长。"), 400
 
         poster_folder = Path(app.config["POSTER_FOLDER"])
         try:
@@ -1758,29 +1878,47 @@ def create_app(test_config=None):
                 500,
             )
 
-        poster_name = poster_filename_for(media["filename"])
-        destination = poster_folder / poster_name
-        temporary = (
-            poster_folder
-            / f"{Path(poster_name).stem}.{uuid.uuid4().hex}.uploading.jpg"
-        )
-        try:
-            poster.save(temporary)
-            size = temporary.stat().st_size
-            if size <= 0 or size > int(app.config["POSTER_MAX_BYTES"]):
-                temporary.unlink(missing_ok=True)
-                return jsonify(ok=False, message="视频封面大小无效。"), 400
-            if not _valid_media_signature(temporary, ".jpg"):
-                temporary.unlink(missing_ok=True)
-                return jsonify(ok=False, message="视频封面格式无效。"), 400
-            temporary.replace(destination)
-        except OSError:
-            temporary.unlink(missing_ok=True)
-            app.logger.exception("Could not save media poster")
-            return (
-                jsonify(ok=False, message="封面保存失败，请稍后重试。"),
-                500,
+        if has_poster:
+            poster_name = poster_filename_for(media["filename"])
+            destination = poster_folder / poster_name
+            temporary = (
+                poster_folder
+                / f"{Path(poster_name).stem}.{uuid.uuid4().hex}.uploading.jpg"
             )
+            try:
+                poster.save(temporary)
+                size = temporary.stat().st_size
+                if size <= 0 or size > int(app.config["POSTER_MAX_BYTES"]):
+                    temporary.unlink(missing_ok=True)
+                    return jsonify(ok=False, message="视频封面大小无效。"), 400
+                if not _valid_media_signature(temporary, ".jpg"):
+                    temporary.unlink(missing_ok=True)
+                    return jsonify(ok=False, message="视频封面格式无效。"), 400
+                temporary.replace(destination)
+            except OSError:
+                temporary.unlink(missing_ok=True)
+                app.logger.exception("Could not save media poster")
+                return (
+                    jsonify(ok=False, message="封面保存失败，请稍后重试。"),
+                    500,
+                )
+
+        if duration is not None:
+            sidecar = poster_folder / duration_filename_for(media["filename"])
+            temporary = (
+                poster_folder
+                / f"{Path(sidecar).stem}.{uuid.uuid4().hex}.uploading.duration"
+            )
+            try:
+                temporary.write_text(f"{duration:.3f}", encoding="utf-8")
+                temporary.replace(sidecar)
+            except OSError:
+                temporary.unlink(missing_ok=True)
+                app.logger.exception("Could not save media duration")
+                return (
+                    jsonify(ok=False, message="视频时长保存失败，请稍后重试。"),
+                    500,
+                )
 
         return jsonify(ok=True)
 

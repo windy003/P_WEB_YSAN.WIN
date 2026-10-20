@@ -50,7 +50,8 @@
                 </figure>
               {% else %}
                 {% set poster_url = media_poster_url(item.filename) %}
-                <figure class="post-media-item post-media-item--video" data-video-thumb>
+                {% set duration = media_duration_label(item.filename) %}
+                <figure class="post-media-item post-media-item--video" data-video-thumb{% if duration %} data-duration="{{ duration }}"{% endif %}>
                   <video controls preload="none" playsinline src="{{ media_url }}"{% if poster_url %} poster="{{ poster_url }}"{% endif %} aria-label="{{ post.title }} - 视频 {{ loop.index }}">
                     你的浏览器不支持视频播放。
                   </video>

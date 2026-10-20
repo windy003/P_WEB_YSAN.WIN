@@ -57,6 +57,7 @@
                     {% for item in post.media %}
                       {% set media_url = url_for('media_file', filename=item.filename) %}
                       {% set poster_url = media_poster_url(item.filename) if item.kind == 'video' else None %}
+                      {% set duration = media_duration_label(item.filename) if item.kind == 'video' else '' %}
                       <span class="home-post-media-item{% if item.kind == 'video' %} home-post-media-item--video{% endif %}">
                         {% if item.kind == 'image' %}
                           <img src="{{ media_url }}" alt="{{ post.title }} - 图片 {{ loop.index }}" loading="lazy">
@@ -65,6 +66,9 @@
                           <span class="video-poster-play" aria-hidden="true">▶</span>
                         {% else %}
                           <span class="video-poster-play" aria-hidden="true">▶</span>
+                        {% endif %}
+                        {% if duration %}
+                          <span class="video-poster-duration">{{ duration }}</span>
                         {% endif %}
                       </span>
                     {% endfor %}
