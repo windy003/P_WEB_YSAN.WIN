@@ -1,21 +1,25 @@
-{% macro user_avatar(user, size="") -%}
+{% macro user_avatar(user, size="", zoomable=true) -%}
   {%- if user.avatar_filename -%}
     <img
       class="avatar{% if size %} avatar--{{ size }}{% endif %} avatar--image"
       src="{{ url_for('avatar_file', filename=user.avatar_filename) }}"
       alt=""
       aria-hidden="true"
+      {%- if zoomable %}
       title="点击放大 {{ user.display_name }} 的头像"
       data-avatar-view
       data-avatar-name="{{ user.display_name }}"
+      {%- endif %}
     >
   {%- else -%}
     <span
       class="avatar{% if size %} avatar--{{ size }}{% endif %}"
       aria-hidden="true"
+      {%- if zoomable %}
       title="点击放大 {{ user.display_name }} 的头像"
       data-avatar-view
       data-avatar-name="{{ user.display_name }}"
+      {%- endif %}
     >{{ user.initial }}</span>
   {%- endif -%}
 {%- endmacro %}

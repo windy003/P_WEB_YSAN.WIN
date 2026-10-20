@@ -38,7 +38,7 @@
         {% if g.user %}
           <a class="mobile-compose-link" href="{{ url_for('new_post') }}">发帖</a>
           <a class="user-chip" href="{{ url_for('profile') }}" title="个人资料：点击修改头像和昵称">
-            {{ user_avatar(g.user, "small") }}
+            {{ user_avatar(g.user, "small", zoomable=false) }}
             <span class="user-chip-name">{{ g.user.display_name }}</span>
           </a>
           {% if session.get('admin_authenticated') %}
