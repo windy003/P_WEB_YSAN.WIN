@@ -37,6 +37,9 @@ class CommunityTestCase(unittest.TestCase):
                 "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path.as_posix()}",
                 "MEDIA_FOLDER": str(self.media_dir),
                 "AVATAR_FOLDER": str(self.avatar_dir),
+                "MEDIA_CHUNK_FOLDER": str(Path(self.temp_dir.name) / "chunks"),
+                "MEDIA_CHUNK_SIZE": 32,
+                "MEDIA_CHUNK_THRESHOLD": 1,
                 "MAIL_USERNAME": "",
                 "MAIL_AUTH_CODE": "",
                 "MAIL_TO": "",
@@ -515,6 +518,104 @@ class CommunityTestCase(unittest.TestCase):
         with self.app.app_context():
             self.assertEqual(len(db.session.scalars(db.select(PostMedia)).all()), 0)
         self.assertEqual(list(self.media_dir.glob("*")), [])
+
+    def test_chunked_media_upload_is_merged_and_attached(self):
+        self.register()
+        image_data = b"\x89PNG\r\n\x1a\n" + b"0" * 120
+        token = self.csrf_token("/posts/new")
+
+        init = self.client.post(
+            "/media/upload/init",
+            data={
+                "csrf_token": token,
+                "filename": "large.png",
+                "size": str(len(image_data)),
+            },
+        )
+        self.assertEqual(init.status_code, 200)
+        init_payload = init.get_json()
+        self.assertTrue(init_payload["ok"])
+        upload_token = init_payload["upload_token"]
+        chunk_size = init_payload["chunk_size"]
+        self.assertGreater(init_payload["chunk_count"], 1)
+
+        for index in range(init_payload["chunk_count"]):
+            start = index * chunk_size
+            blob = image_data[start : start + chunk_size]
+            chunk = self.client.post(
+                "/media/upload/chunk",
+                data={
+                    "csrf_token": token,
+                    "token": upload_token,
+                    "index": str(index),
+                    "chunk": (BytesIO(blob), f"chunk-{index}.part"),
+                },
+                content_type="multipart/form-data",
+            )
+            self.assertEqual(chunk.status_code, 200)
+            self.assertTrue(chunk.get_json()["ok"])
+
+        complete = self.client.post(
+            "/media/upload/complete",
+            data={"csrf_token": token, "token": upload_token},
+        )
+        self.assertEqual(complete.status_code, 200)
+        complete_payload = complete.get_json()
+        self.assertTrue(complete_payload["ok"])
+        media_token = complete_payload["token"]
+
+        preview = self.client.get(complete_payload["url"])
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data, image_data)
+        preview.close()
+
+        self.assertEqual(
+            list(Path(self.app.config["MEDIA_CHUNK_FOLDER"]).glob("*")), []
+        )
+
+        response = self.client.post(
+            "/posts/new",
+            data={
+                "csrf_token": token,
+                "title": "分片上传的图片",
+                "content": "合并后的文件应与原文件一致。",
+                "uploaded_media": media_token,
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("分片上传的图片", response.get_data(as_text=True))
+
+        with self.app.app_context():
+            media = db.session.scalars(db.select(PostMedia)).all()
+            self.assertEqual(len(media), 1)
+            merged = (self.media_dir / media[0].filename).read_bytes()
+            self.assertEqual(merged, image_data)
+
+    def test_chunked_upload_can_be_cancelled(self):
+        self.register()
+        token = self.csrf_token("/posts/new")
+        image_data = b"\x89PNG\r\n\x1a\n" + b"0" * 100
+
+        init = self.client.post(
+            "/media/upload/init",
+            data={
+                "csrf_token": token,
+                "filename": "cancel.png",
+                "size": str(len(image_data)),
+            },
+        )
+        upload_token = init.get_json()["upload_token"]
+
+        cancel = self.client.post(
+            "/media/upload/cancel",
+            data={"csrf_token": token, "token": upload_token},
+        )
+        self.assertEqual(cancel.status_code, 200)
+        self.assertTrue(cancel.get_json()["ok"])
+        self.assertEqual(
+            list(Path(self.app.config["MEDIA_CHUNK_FOLDER"]).glob("*")), []
+        )
 
     def test_authenticated_user_is_redirected_away_from_login(self):
         self.register()

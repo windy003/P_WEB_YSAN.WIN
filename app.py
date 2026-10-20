@@ -6,8 +6,10 @@ import json
 import os
 import re
 import secrets
+import shutil
 import smtplib
 import threading
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -687,6 +689,92 @@ def pending_media_from_tokens(app, tokens, user_id):
     return items
 
 
+MEDIA_CHUNK_TOKEN_SALT = "media-chunk-upload"
+
+
+def encode_chunk_upload_token(app, user_id, upload_id, kind, extension, size):
+    serializer = URLSafeTimedSerializer(
+        app.config["SECRET_KEY"], salt=MEDIA_CHUNK_TOKEN_SALT
+    )
+    return serializer.dumps(
+        {
+            "user_id": user_id,
+            "upload_id": upload_id,
+            "kind": kind,
+            "extension": extension,
+            "size": size,
+        }
+    )
+
+
+def decode_chunk_upload_token(app, token, user_id):
+    """Return a validated chunk-upload session owned by this user."""
+    if not token:
+        return None
+    serializer = URLSafeTimedSerializer(
+        app.config["SECRET_KEY"], salt=MEDIA_CHUNK_TOKEN_SALT
+    )
+    try:
+        data = serializer.loads(token, max_age=MEDIA_UPLOAD_TOKEN_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+
+    if not isinstance(data, dict) or data.get("user_id") != user_id:
+        return None
+
+    upload_id = data.get("upload_id")
+    kind = data.get("kind")
+    extension = data.get("extension")
+    size = data.get("size")
+    if not isinstance(upload_id, str) or not re.fullmatch(
+        r"[0-9a-f]{32}", upload_id
+    ):
+        return None
+    if kind not in ("image", "video") or not isinstance(extension, str):
+        return None
+    media_type = ALLOWED_MEDIA_EXTENSIONS.get(extension)
+    if media_type is None or media_type[0] != kind:
+        return None
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+        return None
+    max_size = int(
+        app.config[
+            "MEDIA_MAX_IMAGE_BYTES"
+            if kind == "image"
+            else "MEDIA_MAX_VIDEO_BYTES"
+        ]
+    )
+    if size > max_size:
+        return None
+
+    chunk_size = int(app.config["MEDIA_CHUNK_SIZE"])
+    return {
+        "upload_id": upload_id,
+        "kind": kind,
+        "extension": extension,
+        "size": size,
+        "chunk_size": chunk_size,
+        "chunk_count": (size + chunk_size - 1) // chunk_size,
+    }
+
+
+def cleanup_stale_chunk_uploads(folder, max_age_seconds=24 * 60 * 60):
+    """Remove unfinished chunk directories that have been idle for a day."""
+    try:
+        entries = list(folder.iterdir())
+    except OSError:
+        return
+    cutoff = time.time() - max_age_seconds
+    for entry in entries:
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff:
+                shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            continue
+
+
 def save_avatar_upload(upload, app):
     """Validate and store a profile avatar, returning its generated filename."""
     if upload is None or not upload.filename:
@@ -863,6 +951,9 @@ def create_app(test_config=None):
         MEDIA_MAX_IMAGE_BYTES=10 * 1024 * 1024,
         MEDIA_MAX_VIDEO_BYTES=300 * 1024 * 1024,
         MEDIA_MAX_TOTAL_BYTES=320 * 1024 * 1024,
+        MEDIA_CHUNK_SIZE=40 * 1024 * 1024,
+        MEDIA_CHUNK_THRESHOLD=20 * 1024 * 1024,
+        MEDIA_CHUNK_FOLDER=str(Path(app.instance_path) / "media_chunks"),
         ALIYUN_ACCESS_KEY_ID=os.environ.get("ALIYUN_ACCESS_KEY_ID", ""),
         ALIYUN_ACCESS_KEY_SECRET=os.environ.get("ALIYUN_ACCESS_KEY_SECRET", ""),
         ALIYUN_SMS_SIGN_NAME=os.environ.get(
@@ -974,6 +1065,7 @@ def create_app(test_config=None):
             "media_max_image_bytes": app.config["MEDIA_MAX_IMAGE_BYTES"],
             "media_max_video_bytes": app.config["MEDIA_MAX_VIDEO_BYTES"],
             "media_max_total_bytes": app.config["MEDIA_MAX_TOTAL_BYTES"],
+            "media_chunk_threshold": app.config["MEDIA_CHUNK_THRESHOLD"],
             "media_max_image_mb": app.config["MEDIA_MAX_IMAGE_BYTES"] // (1024 * 1024),
             "media_max_video_mb": app.config["MEDIA_MAX_VIDEO_BYTES"] // (1024 * 1024),
             "avatar_max_bytes": app.config["AVATAR_MAX_BYTES"],
@@ -1617,6 +1709,245 @@ def create_app(test_config=None):
             kind=item["kind"],
             url=url_for("pending_media_file", token=token),
         )
+
+    @app.post("/media/upload/init")
+    @login_required
+    def init_media_chunk_upload():
+        filename = request.form.get("filename", "").strip()
+        try:
+            size = int(request.form.get("size", "0"))
+        except (TypeError, ValueError):
+            return jsonify(ok=False, message="文件信息无效。"), 400
+
+        extension = Path(filename).suffix.lower()
+        media_type = ALLOWED_MEDIA_EXTENSIONS.get(extension)
+        if media_type is None:
+            return jsonify(ok=False, message="文件格式不受支持。"), 400
+
+        kind = media_type[0]
+        max_size = int(
+            app.config[
+                "MEDIA_MAX_IMAGE_BYTES"
+                if kind == "image"
+                else "MEDIA_MAX_VIDEO_BYTES"
+            ]
+        )
+        if size <= 0:
+            return jsonify(ok=False, message="不能上传空文件。"), 400
+        if size > max_size:
+            category = "图片" if kind == "image" else "视频"
+            return (
+                jsonify(
+                    ok=False,
+                    message=(
+                        f"{category}大小不能超过 "
+                        f"{max_size // (1024 * 1024)} MB。"
+                    ),
+                ),
+                400,
+            )
+
+        chunk_size = int(app.config["MEDIA_CHUNK_SIZE"])
+        chunk_count = (size + chunk_size - 1) // chunk_size
+        chunk_root = Path(app.config["MEDIA_CHUNK_FOLDER"])
+        try:
+            chunk_root.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            app.logger.exception("Could not create chunk upload folder")
+            return (
+                jsonify(ok=False, message="上传目录不可用，请联系管理员。"),
+                500,
+            )
+
+        cleanup_stale_chunk_uploads(chunk_root)
+        upload_id = uuid.uuid4().hex
+        try:
+            (chunk_root / upload_id).mkdir(parents=False, exist_ok=False)
+        except OSError:
+            app.logger.exception("Could not create chunk upload session")
+            return (
+                jsonify(ok=False, message="上传初始化失败，请稍后重试。"),
+                500,
+            )
+
+        token = encode_chunk_upload_token(
+            app, g.user.id, upload_id, kind, extension, size
+        )
+        return jsonify(
+            ok=True,
+            upload_token=token,
+            chunk_size=chunk_size,
+            chunk_count=chunk_count,
+        )
+
+    @app.post("/media/upload/chunk")
+    @login_required
+    def upload_media_chunk():
+        upload_session = decode_chunk_upload_token(
+            app, request.form.get("token", ""), g.user.id
+        )
+        if upload_session is None:
+            return (
+                jsonify(ok=False, message="上传会话已过期，请重新选择文件。"),
+                400,
+            )
+
+        try:
+            index = int(request.form.get("index", "-1"))
+        except (TypeError, ValueError):
+            index = -1
+        if index < 0 or index >= upload_session["chunk_count"]:
+            return jsonify(ok=False, message="分片序号无效。"), 400
+
+        upload = request.files.get("chunk")
+        if upload is None or not upload.filename:
+            return jsonify(ok=False, message="缺少分片内容。"), 400
+
+        chunk_dir = (
+            Path(app.config["MEDIA_CHUNK_FOLDER"]) / upload_session["upload_id"]
+        )
+        if not chunk_dir.is_dir():
+            return (
+                jsonify(ok=False, message="上传会话已过期，请重新选择文件。"),
+                400,
+            )
+
+        start = index * upload_session["chunk_size"]
+        expected_size = min(
+            upload_session["chunk_size"], upload_session["size"] - start
+        )
+        destination = chunk_dir / f"{index:06d}.part"
+        temporary = chunk_dir / f"{index:06d}.tmp"
+        try:
+            upload.save(temporary)
+            actual_size = temporary.stat().st_size
+            if actual_size != expected_size:
+                temporary.unlink(missing_ok=True)
+                return jsonify(ok=False, message="分片大小不正确，请重试。"), 400
+            temporary.replace(destination)
+        except OSError:
+            temporary.unlink(missing_ok=True)
+            app.logger.exception("Could not save media chunk")
+            return (
+                jsonify(ok=False, message="分片保存失败，请稍后重试。"),
+                500,
+            )
+
+        return jsonify(ok=True, index=index)
+
+    @app.post("/media/upload/complete")
+    @login_required
+    def complete_media_chunk_upload():
+        upload_session = decode_chunk_upload_token(
+            app, request.form.get("token", ""), g.user.id
+        )
+        if upload_session is None:
+            return (
+                jsonify(ok=False, message="上传会话已过期，请重新选择文件。"),
+                400,
+            )
+
+        chunk_dir = (
+            Path(app.config["MEDIA_CHUNK_FOLDER"]) / upload_session["upload_id"]
+        )
+        if not chunk_dir.is_dir():
+            return (
+                jsonify(ok=False, message="上传会话已过期，请重新选择文件。"),
+                400,
+            )
+
+        chunks = []
+        total_size = 0
+        for index in range(upload_session["chunk_count"]):
+            part = chunk_dir / f"{index:06d}.part"
+            start = index * upload_session["chunk_size"]
+            expected_size = min(
+                upload_session["chunk_size"], upload_session["size"] - start
+            )
+            try:
+                actual_size = part.stat().st_size
+            except OSError:
+                return (
+                    jsonify(ok=False, message="分片尚未上传完整，请重试。"),
+                    400,
+                )
+            if actual_size != expected_size:
+                return (
+                    jsonify(ok=False, message="分片不完整，请重新上传。"),
+                    400,
+                )
+            chunks.append(part)
+            total_size += actual_size
+
+        if total_size != upload_session["size"]:
+            return (
+                jsonify(ok=False, message="文件大小校验失败，请重新上传。"),
+                400,
+            )
+
+        media_folder = Path(app.config["MEDIA_FOLDER"])
+        try:
+            media_folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            app.logger.exception("Could not create media folder")
+            return (
+                jsonify(ok=False, message="媒体存储目录不可用，请联系管理员。"),
+                500,
+            )
+
+        filename = f"{uuid.uuid4().hex}{upload_session['extension']}"
+        destination = media_folder / filename
+        try:
+            with destination.open("wb") as output:
+                for part in chunks:
+                    with part.open("rb") as source:
+                        shutil.copyfileobj(source, output, 1024 * 1024)
+            if not _valid_media_signature(
+                destination, upload_session["extension"]
+            ):
+                destination.unlink(missing_ok=True)
+                shutil.rmtree(chunk_dir, ignore_errors=True)
+                return (
+                    jsonify(
+                        ok=False,
+                        message="文件内容与扩展名不匹配，请检查文件后再上传。",
+                    ),
+                    400,
+                )
+        except OSError:
+            destination.unlink(missing_ok=True)
+            app.logger.exception("Could not assemble uploaded media")
+            return (
+                jsonify(ok=False, message="文件合并失败，请稍后重试。"),
+                500,
+            )
+
+        shutil.rmtree(chunk_dir, ignore_errors=True)
+        token = encode_media_upload_token(
+            app,
+            g.user.id,
+            {"kind": upload_session["kind"], "filename": filename},
+        )
+        return jsonify(
+            ok=True,
+            token=token,
+            kind=upload_session["kind"],
+            url=url_for("pending_media_file", token=token),
+        )
+
+    @app.post("/media/upload/cancel")
+    @login_required
+    def cancel_media_chunk_upload():
+        upload_session = decode_chunk_upload_token(
+            app, request.form.get("token", ""), g.user.id
+        )
+        if upload_session is not None:
+            shutil.rmtree(
+                Path(app.config["MEDIA_CHUNK_FOLDER"])
+                / upload_session["upload_id"],
+                ignore_errors=True,
+            )
+        return jsonify(ok=True)
 
     @app.post("/media/discard")
     @login_required

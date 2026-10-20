@@ -215,6 +215,15 @@
     const uploadedContainer = form?.querySelector("[data-uploaded-media]");
     const uploadUrl = input.dataset.uploadUrl;
     const discardUrl = input.dataset.discardUrl;
+    const chunkInitUrl = input.dataset.chunkInitUrl;
+    const chunkUploadUrl = input.dataset.chunkUploadUrl;
+    const chunkCompleteUrl = input.dataset.chunkCompleteUrl;
+    const chunkCancelUrl = input.dataset.chunkCancelUrl;
+    const chunkThreshold =
+      Number(input.dataset.chunkThreshold) || 20 * 1024 * 1024;
+    const canUseChunks = Boolean(
+      chunkInitUrl && chunkUploadUrl && chunkCompleteUrl && chunkCancelUrl,
+    );
     const csrfToken =
       form?.querySelector('input[name="csrf_token"]')?.value || "";
 
@@ -364,11 +373,91 @@
       }).catch(() => {});
     };
 
+    const cancelChunkUpload = (token) => {
+      if (!token || !chunkCancelUrl) {
+        return;
+      }
+      const data = new FormData();
+      data.append("csrf_token", csrfToken);
+      data.append("token", token);
+      fetch(chunkCancelUrl, {
+        method: "POST",
+        body: data,
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    const postJson = (item, url, data, onProgress) =>
+      new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        item.xhr = xhr;
+        xhr.open("POST", url);
+        xhr.responseType = "json";
+
+        if (onProgress) {
+          xhr.upload.addEventListener("progress", onProgress);
+        }
+
+        const settle = () => {
+          if (item.xhr === xhr) {
+            item.xhr = null;
+          }
+        };
+
+        xhr.addEventListener("load", () => {
+          settle();
+          const payload = xhr.response;
+          if (xhr.status >= 200 && xhr.status < 300 && payload?.ok) {
+            resolve(payload);
+          } else {
+            reject(new Error(payload?.message || "上传失败，请稍后重试。"));
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          settle();
+          reject(new Error("网络错误，上传失败，请稍后重试。"));
+        });
+
+        xhr.addEventListener("abort", () => {
+          settle();
+          const error = new Error("已取消上传");
+          error.aborted = true;
+          reject(error);
+        });
+
+        xhr.send(data);
+      });
+
+    const finishUpload = (item, payload) => {
+      item.status = "done";
+      item.progress = 100;
+      item.token = payload.token;
+      item.url = payload.url;
+      item.uploadToken = null;
+
+      const hidden = document.createElement("input");
+      hidden.type = "hidden";
+      hidden.name = "uploaded_media";
+      hidden.value = payload.token;
+      hidden.dataset.kind = payload.kind;
+      hidden.dataset.size = String(item.size || 0);
+      hidden.dataset.url = payload.url;
+      uploadedContainer?.append(hidden);
+      item.hidden = hidden;
+
+      updateItemProgress(item);
+      refreshSummary();
+    };
+
     const removeItem = (item) => {
+      item.removed = true;
       if (item.xhr) {
         item.xhr.abort();
         item.xhr = null;
       }
+      cancelChunkUpload(item.uploadToken);
+      item.uploadToken = null;
       if (item.token) {
         discardToken(item.token);
       }
@@ -387,61 +476,139 @@
       item.status = "error";
       item.progress = 0;
       item.xhr = null;
+      cancelChunkUpload(item.uploadToken);
+      item.uploadToken = null;
       updateItemProgress(item);
       refreshSummary();
       setStatus(message, "error");
     };
 
-    const startUpload = (item) => {
-      const xhr = new XMLHttpRequest();
-      item.xhr = xhr;
-      xhr.open("POST", uploadUrl);
-      xhr.responseType = "json";
-
-      xhr.upload.addEventListener("progress", (event) => {
-        if (!event.lengthComputable) {
-          return;
-        }
-        item.progress = Math.min(
-          99,
-          Math.round((event.loaded / event.total) * 100),
-        );
-        updateItemProgress(item);
-        refreshSummary();
-      });
-
-      xhr.addEventListener("load", () => {
-        const payload = xhr.response;
-        if (xhr.status >= 200 && xhr.status < 300 && payload?.ok) {
-          item.status = "done";
-          item.progress = 100;
-          item.token = payload.token;
-          item.url = payload.url;
-
-          const hidden = document.createElement("input");
-          hidden.type = "hidden";
-          hidden.name = "uploaded_media";
-          hidden.value = payload.token;
-          hidden.dataset.kind = payload.kind;
-          hidden.dataset.url = payload.url;
-          uploadedContainer?.append(hidden);
-          item.hidden = hidden;
-
+    const uploadSingle = async (item) => {
+      try {
+        const data = new FormData();
+        data.append("csrf_token", csrfToken);
+        data.append("media", item.file, item.file.name);
+        const payload = await postJson(item, uploadUrl, data, (event) => {
+          if (!event.lengthComputable) {
+            return;
+          }
+          item.progress = Math.min(
+            99,
+            Math.round((event.loaded / event.total) * 100),
+          );
           updateItemProgress(item);
           refreshSummary();
-        } else {
-          failUpload(item, payload?.message || "上传失败，请稍后重试。");
+        });
+        if (item.removed) {
+          discardToken(payload.token);
+          return;
         }
-      });
+        finishUpload(item, payload);
+      } catch (error) {
+        if (!item.removed) {
+          failUpload(item, error.message || "上传失败，请稍后重试。");
+        }
+      }
+    };
 
-      xhr.addEventListener("error", () => {
-        failUpload(item, "网络错误，上传失败，请稍后重试。");
-      });
+    const uploadChunkWithRetry = async (item, index, blob, offset) => {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const data = new FormData();
+          data.append("csrf_token", csrfToken);
+          data.append("token", item.uploadToken);
+          data.append("index", String(index));
+          data.append("chunk", blob, `chunk-${index}.part`);
+          await postJson(item, chunkUploadUrl, data, (event) => {
+            if (!event.lengthComputable) {
+              return;
+            }
+            const uploaded = offset + Math.min(event.loaded, blob.size);
+            item.progress = Math.min(
+              99,
+              Math.round((uploaded / item.file.size) * 100),
+            );
+            updateItemProgress(item);
+            refreshSummary();
+          });
+          return;
+        } catch (error) {
+          if (error.aborted || item.removed) {
+            throw error;
+          }
+          if (attempt >= 2) {
+            throw error;
+          }
+          await new Promise((resolve) => {
+            window.setTimeout(resolve, 600 * (attempt + 1));
+          });
+        }
+      }
+    };
 
-      const data = new FormData();
-      data.append("csrf_token", csrfToken);
-      data.append("media", item.file, item.file.name);
-      xhr.send(data);
+    const uploadChunked = async (item) => {
+      try {
+        const initData = new FormData();
+        initData.append("csrf_token", csrfToken);
+        initData.append("filename", item.file.name);
+        initData.append("size", String(item.file.size));
+        const initPayload = await postJson(item, chunkInitUrl, initData);
+        item.uploadToken = initPayload.upload_token;
+        if (item.removed) {
+          cancelChunkUpload(item.uploadToken);
+          item.uploadToken = null;
+          return;
+        }
+
+        const chunkSize = Number(initPayload.chunk_size) || item.file.size;
+        const chunkCount = Number(initPayload.chunk_count) || 1;
+
+        for (let index = 0; index < chunkCount; index += 1) {
+          if (item.removed) {
+            return;
+          }
+          const start = index * chunkSize;
+          const end = Math.min(start + chunkSize, item.file.size);
+          const blob = item.file.slice(start, end);
+          await uploadChunkWithRetry(item, index, blob, start);
+          item.progress = Math.min(
+            99,
+            Math.round(((start + blob.size) / item.file.size) * 100),
+          );
+          updateItemProgress(item);
+          refreshSummary();
+        }
+
+        if (item.removed) {
+          return;
+        }
+
+        const completeData = new FormData();
+        completeData.append("csrf_token", csrfToken);
+        completeData.append("token", item.uploadToken);
+        const payload = await postJson(
+          item,
+          chunkCompleteUrl,
+          completeData,
+        );
+        if (item.removed) {
+          discardToken(payload.token);
+          return;
+        }
+        finishUpload(item, payload);
+      } catch (error) {
+        if (!item.removed) {
+          failUpload(item, error.message || "上传失败，请稍后重试。");
+        }
+      }
+    };
+
+    const startUpload = (item) => {
+      if (canUseChunks && item.file.size > chunkThreshold) {
+        uploadChunked(item);
+      } else {
+        uploadSingle(item);
+      }
     };
 
     const render = () => {
@@ -650,6 +817,8 @@
           token: null,
           url: "",
           objectUrl: URL.createObjectURL(file),
+          uploadToken: null,
+          removed: false,
           hidden: null,
           xhr: null,
         });
@@ -683,6 +852,8 @@
         token: hidden.value,
         url: hidden.dataset.url || "",
         objectUrl: null,
+        uploadToken: null,
+        removed: false,
         hidden,
         xhr: null,
       });
@@ -699,10 +870,13 @@
 
     clearButton?.addEventListener("click", () => {
       items.forEach((item) => {
+        item.removed = true;
         if (item.xhr) {
           item.xhr.abort();
           item.xhr = null;
         }
+        cancelChunkUpload(item.uploadToken);
+        item.uploadToken = null;
         if (item.token) {
           discardToken(item.token);
         }
