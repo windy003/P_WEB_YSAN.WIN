@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% from "_macros.html" import user_avatar %}
+
+{% block title %}{{ profile_user.display_name }} 的个人主页 · 耶稣爱你.胜利{% endblock %}
+{% block body_class %}page-user{% endblock %}
+
+{% block content %}
+  <div class="page-shell">
+    <div class="container container--narrow">
+      <nav class="breadcrumb" aria-label="面包屑导航">
+        <a href="{{ url_for('index') }}">首页</a>
+        <span aria-hidden="true">/</span>
+        <span>个人主页</span>
+      </nav>
+
+      <header class="user-profile-head">
+        <div class="user-profile-avatar">
+          {{ user_avatar(profile_user, "xl") }}
+        </div>
+        <div class="user-profile-info">
+          <p class="eyebrow eyebrow--muted">MEMBER</p>
+          <h1>{{ profile_user.display_name }}</h1>
+          {% if profile_user.bio %}
+            <p class="user-profile-bio">{{ profile_user.bio }}</p>
+          {% endif %}
+          <p class="user-profile-meta">
+            <span>加入于 {{ profile_user.created_at|localtime }}</span>
+            <span aria-hidden="true">·</span>
+            <span>{{ post_count }} 篇帖子</span>
+          </p>
+          {% if is_self %}
+            <a class="btn btn--ghost btn--small user-profile-edit" href="{{ url_for('profile') }}">编辑个人资料</a>
+          {% endif %}
+        </div>
+      </header>
+
+      <section class="user-posts" id="user-posts" aria-labelledby="user-posts-heading">
+        <div class="section-heading section-heading--compact">
+          <div>
+            <p class="eyebrow eyebrow--muted">POSTS</p>
+            <h2 id="user-posts-heading">{{ profile_user.display_name }} 的帖子 <span class="heading-count">{{ post_count }}</span></h2>
+          </div>
+        </div>
+
+        {% if pagination.items %}
+          <div class="post-list">
+            {% for post in pagination.items %}
+              {% set post_url = url_for('post_detail', post_id=post.id) %}
+              <div class="post-card">
+                <a class="post-card-link" href="{{ post_url }}">
+                  <h3>{{ post.title }}</h3>
+                  {% if post.content %}
+                    <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>
+                  {% endif %}
+                </a>
+                <div class="post-card-foot">
+                  <span class="post-card-date">
+                    <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">
+                      {{ post.created_at|timeago }}
+                    </time>
+                  </span>
+                  <span class="post-card-foot-right">
+                    <span class="comment-count">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M20 11.5a7.5 7.5 0 0 1-10.8 6.7L4 20l1.8-5A7.5 7.5 0 1 1 20 11.5Z"/>
+                      </svg>
+                      {{ counts.get(post.id, 0) }} 条回应
+                    </span>
+                    <a class="read-more" href="{{ post_url }}">继续阅读</a>
+                  </span>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+
+          {% if pagination.pages > 1 %}
+            <nav class="pagination" aria-label="帖子分页">
+              {% if pagination.has_prev %}
+                <a class="pagination-link" href="{{ url_for('user_profile', user_id=profile_user.id, page=pagination.prev_num) }}#user-posts">← 上一页</a>
+              {% else %}
+                <span class="pagination-link is-disabled">← 上一页</span>
+              {% endif %}
+              <span class="pagination-status">第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
+              {% if pagination.has_next %}
+                <a class="pagination-link" href="{{ url_for('user_profile', user_id=profile_user.id, page=pagination.next_num) }}#user-posts">下一页 →</a>
+              {% else %}
+                <span class="pagination-link is-disabled">下一页 →</span>
+              {% endif %}
+            </nav>
+          {% endif %}
+        {% else %}
+          <div class="discussion-empty">
+            <p>这位弟兄姊妹还没有发布帖子。</p>
+          </div>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+{% endblock %}

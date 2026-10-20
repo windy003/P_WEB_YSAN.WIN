@@ -147,6 +147,8 @@ admin_password=你的管理员密码
 - 昵称为 2–20 个字符，支持中文、英文、数字和下划线，且不能与其他用户的用户名或昵称重复
 - 昵称用于帖子和回应中的显示；留空则显示用户名
 - 修改昵称不会影响登录：用户名 + 密码登录仍然使用原用户名
+- 点击帖子或回应中的头像会进入该用户的公开个人主页（`/users/<id>`），可查看其昵称、介绍与帖子
+- 只有个人资料页的头像支持点击放大查看
 
 ## 数据与配置
 
@@ -186,6 +188,7 @@ python -m unittest discover -s tests -v
 │   ├── _macros.html
 │   ├── index.html
 │   ├── profile.html        # 个人资料（头像与昵称）
+│   ├── user_profile.html   # 用户公开个人主页
 │   ├── post_detail.html
 │   ├── post_new.html
 │   ├── post_edit.html      # 编辑自己的帖子

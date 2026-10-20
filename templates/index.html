@@ -33,20 +33,20 @@
             {% set post_url = url_for('post_detail', post_id=post.id) %}
             {% set can_delete = session.get('admin_authenticated') or (g.user and g.user.id == post.user_id) %}
             <div class="post-card">
-              <a class="post-card-link" href="{{ post_url }}">
-                <div class="post-card-head">
-                  <div class="post-author">
-                    {{ user_avatar(post.author) }}
-                    <span class="post-author-text">
-                      <strong>{{ post.author.display_name }}</strong>
-                      <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">
-                        {{ post.created_at|timeago }}
-                      </time>
-                    </span>
-                  </div>
-                  <span class="post-card-arrow" aria-hidden="true">↗</span>
-                </div>
+              <div class="post-card-head">
+                <a class="post-author" href="{{ url_for('user_profile', user_id=post.author.id) }}" title="查看 {{ post.author.display_name }} 的个人主页">
+                  {{ user_avatar(post.author) }}
+                  <span class="post-author-text">
+                    <strong>{{ post.author.display_name }}</strong>
+                    <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">
+                      {{ post.created_at|timeago }}
+                    </time>
+                  </span>
+                </a>
+                <a class="post-card-arrow" href="{{ post_url }}" aria-label="阅读《{{ post.title }}》">↗</a>
+              </div>
 
+              <a class="post-card-link" href="{{ post_url }}">
                 <h3>{{ post.title }}</h3>
                 {% if post.content %}
                   <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>

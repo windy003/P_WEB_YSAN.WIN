@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import user_avatar %}
+{% from "_macros.html" import user_avatar, user_avatar_link %}
 
 {% block title %}{{ post.title }} · 耶稣爱你.胜利{% endblock %}
 {% block body_class %}page-post{% endblock %}
@@ -18,7 +18,9 @@
           <p class="eyebrow eyebrow--muted">COMMUNITY DISCUSSION</p>
           <h1>{{ post.title }}</h1>
           <div class="post-meta">
-            {{ user_avatar(post.author, "large") }}
+            <a class="post-meta-avatar" href="{{ url_for('user_profile', user_id=post.author.id) }}" title="查看 {{ post.author.display_name }} 的个人主页">
+              {{ user_avatar(post.author, "large") }}
+            </a>
             <div>
               <strong>{{ post.author.display_name }}</strong>
               <p>
@@ -74,7 +76,7 @@
           <form method="post" action="{{ url_for('add_comment', post_id=post.id) }}" class="comment-form stack-form">
             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="comment-form-head">
-              {{ user_avatar(g.user, "small") }}
+              {{ user_avatar_link(g.user, "small") }}
               <label for="comment-content">以 <strong>{{ g.user.display_name }}</strong> 的身份回应</label>
             </div>
             <textarea
@@ -107,7 +109,7 @@
           <div class="comment-list">
             {% for comment in comments %}
               <article class="comment" id="comment-{{ comment.id }}">
-                {{ user_avatar(comment.author) }}
+                {{ user_avatar_link(comment.author) }}
                 <div class="comment-main">
                   <div class="comment-head">
                     <strong>{{ comment.author.display_name }}</strong>

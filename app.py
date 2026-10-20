@@ -1673,6 +1673,40 @@ def create_app(test_config=None):
             location=lookup_ip_location(visitor.ip_address),
         )
 
+    @app.get("/users/<int:user_id>")
+    def user_profile(user_id):
+        user = db.session.get(User, user_id)
+        if user is None:
+            abort(404)
+
+        page = request.args.get("page", 1, type=int) or 1
+        page = max(page, 1)
+        statement = (
+            db.select(Post)
+            .where(Post.user_id == user.id)
+            .options(selectinload(Post.author))
+            .order_by(Post.created_at.desc(), Post.id.desc())
+        )
+        pagination = db.paginate(statement, page=page, per_page=6, error_out=False)
+        post_ids = [post.id for post in pagination.items]
+        counts = {}
+        if post_ids:
+            rows = db.session.execute(
+                db.select(Comment.post_id, func.count(Comment.id))
+                .where(Comment.post_id.in_(post_ids))
+                .group_by(Comment.post_id)
+            ).all()
+            counts = {post_id: count for post_id, count in rows}
+
+        return render_template(
+            "user_profile.html",
+            profile_user=user,
+            pagination=pagination,
+            counts=counts,
+            post_count=user.posts.count(),
+            is_self=g.user is not None and g.user.id == user.id,
+        )
+
     @app.get("/profile")
     @login_required
     def profile():
