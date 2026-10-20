@@ -5,7 +5,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=/root/P_WEB_YSAN.WIN/
-ExecStart=/root/P_WEB_YSAN.WIN/.venv/bin/python /root/P_WEB_YSAN/app.py
+ExecStart=/root/P_WEB_YSAN.WIN/.venv/bin/python /root/P_WEB_YSAN.WIN/app.py
 Restart=always
 RestartSec=3
 
