@@ -660,6 +660,21 @@ def decode_media_upload_token(app, token, user_id):
     return {"kind": kind, "filename": filename}
 
 
+def poster_filename_for(media_filename):
+    return Path(media_filename).stem + ".jpg"
+
+
+def delete_poster_file(app, media_filename):
+    try:
+        (Path(app.config["POSTER_FOLDER"]) / poster_filename_for(media_filename)).unlink(
+            missing_ok=True
+        )
+    except OSError:
+        app.logger.warning(
+            "Could not delete poster for %s", media_filename, exc_info=True
+        )
+
+
 def media_total_size(media_folder, items):
     total = 0
     for item in items:
@@ -954,6 +969,8 @@ def create_app(test_config=None):
         MEDIA_CHUNK_SIZE=40 * 1024 * 1024,
         MEDIA_CHUNK_THRESHOLD=20 * 1024 * 1024,
         MEDIA_CHUNK_FOLDER=str(Path(app.instance_path) / "media_chunks"),
+        POSTER_FOLDER=str(Path(app.instance_path) / "posters"),
+        POSTER_MAX_BYTES=2 * 1024 * 1024,
         ALIYUN_ACCESS_KEY_ID=os.environ.get("ALIYUN_ACCESS_KEY_ID", ""),
         ALIYUN_ACCESS_KEY_SECRET=os.environ.get("ALIYUN_ACCESS_KEY_SECRET", ""),
         ALIYUN_SMS_SIGN_NAME=os.environ.get(
@@ -1022,6 +1039,7 @@ def create_app(test_config=None):
             "media_file",
             "avatar_file",
             "pending_media_file",
+            "poster_file",
         ):
             return
         if endpoint.startswith("admin"):
@@ -1073,6 +1091,13 @@ def create_app(test_config=None):
             "display_name_max_length": DISPLAY_NAME_MAX_LENGTH,
             "bio_max_length": BIO_MAX_LENGTH,
         }
+
+    @app.template_global()
+    def media_poster_url(media_filename):
+        poster_name = poster_filename_for(media_filename)
+        if (Path(app.config["POSTER_FOLDER"]) / poster_name).is_file():
+            return url_for("poster_file", filename=poster_name)
+        return None
 
     @app.template_filter("timeago")
     def timeago(value):
@@ -1710,6 +1735,79 @@ def create_app(test_config=None):
             url=url_for("pending_media_file", token=token),
         )
 
+    @app.post("/media/poster")
+    @login_required
+    def upload_media_poster():
+        media = decode_media_upload_token(
+            app, request.form.get("token", ""), g.user.id
+        )
+        if media is None or media["kind"] != "video":
+            return jsonify(ok=False, message="视频信息无效。"), 400
+
+        poster = request.files.get("poster")
+        if poster is None or not poster.filename:
+            return jsonify(ok=False, message="缺少视频封面。"), 400
+
+        poster_folder = Path(app.config["POSTER_FOLDER"])
+        try:
+            poster_folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            app.logger.exception("Could not create poster folder")
+            return (
+                jsonify(ok=False, message="封面保存失败，请稍后重试。"),
+                500,
+            )
+
+        poster_name = poster_filename_for(media["filename"])
+        destination = poster_folder / poster_name
+        temporary = (
+            poster_folder
+            / f"{Path(poster_name).stem}.{uuid.uuid4().hex}.uploading.jpg"
+        )
+        try:
+            poster.save(temporary)
+            size = temporary.stat().st_size
+            if size <= 0 or size > int(app.config["POSTER_MAX_BYTES"]):
+                temporary.unlink(missing_ok=True)
+                return jsonify(ok=False, message="视频封面大小无效。"), 400
+            if not _valid_media_signature(temporary, ".jpg"):
+                temporary.unlink(missing_ok=True)
+                return jsonify(ok=False, message="视频封面格式无效。"), 400
+            temporary.replace(destination)
+        except OSError:
+            temporary.unlink(missing_ok=True)
+            app.logger.exception("Could not save media poster")
+            return (
+                jsonify(ok=False, message="封面保存失败，请稍后重试。"),
+                500,
+            )
+
+        return jsonify(ok=True)
+
+    @app.get("/posters/<filename>")
+    def poster_file(filename):
+        if not re.fullmatch(r"[0-9a-f]{32}\.jpg", filename):
+            abort(404)
+
+        stem = Path(filename).stem
+        exists = db.session.scalar(
+            db.select(PostMedia.id).where(
+                PostMedia.kind == "video",
+                PostMedia.filename.like(f"{stem}.%"),
+            )
+        )
+        if exists is None:
+            abort(404)
+
+        response = send_from_directory(
+            app.config["POSTER_FOLDER"],
+            filename,
+            max_age=30 * 24 * 60 * 60,
+            conditional=True,
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     @app.post("/media/upload/init")
     @login_required
     def init_media_chunk_upload():
@@ -1971,6 +2069,7 @@ def create_app(test_config=None):
                         media["filename"],
                         exc_info=True,
                     )
+                delete_poster_file(app, media["filename"])
         return jsonify(ok=True)
 
     @app.get("/media/pending/<token>")
@@ -2265,6 +2364,7 @@ def create_app(test_config=None):
                     app.logger.warning(
                         "Could not delete media file %s", filename, exc_info=True
                     )
+                delete_poster_file(app, filename)
             flash("帖子已删除。", "success")
 
         target = safe_next_url(request.form.get("next", ""))

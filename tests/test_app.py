@@ -30,6 +30,7 @@ class CommunityTestCase(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.media_dir = Path(self.temp_dir.name) / "media"
         self.avatar_dir = Path(self.temp_dir.name) / "avatars"
+        self.poster_dir = Path(self.temp_dir.name) / "posters"
         database_path = Path(self.temp_dir.name) / "test.db"
         self.app = create_app(
             {
@@ -38,6 +39,7 @@ class CommunityTestCase(unittest.TestCase):
                 "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path.as_posix()}",
                 "MEDIA_FOLDER": str(self.media_dir),
                 "AVATAR_FOLDER": str(self.avatar_dir),
+                "POSTER_FOLDER": str(self.poster_dir),
                 "MEDIA_CHUNK_FOLDER": str(Path(self.temp_dir.name) / "chunks"),
                 "MEDIA_CHUNK_SIZE": 32,
                 "MEDIA_CHUNK_THRESHOLD": 1,
@@ -479,12 +481,82 @@ class CommunityTestCase(unittest.TestCase):
         home = self.client.get("/")
         home_html = home.get_data(as_text=True)
         self.assertIn(f"/media/{image_filename}", home_html)
-        self.assertIn(f"/media/{video_filename}", home_html)
+        self.assertNotIn(f"/media/{video_filename}", home_html)
         self.assertIn("home-post-media-item", home_html)
-        self.assertIn("data-video-poster", home_html)
+        self.assertIn("video-poster-play", home_html)
+        self.assertNotIn("data-video-poster", home_html)
 
         missing_response = self.client.get("/media/not-a-real-file.jpg")
         self.assertEqual(missing_response.status_code, 404)
+
+    def test_video_poster_is_saved_and_served_on_home(self):
+        self.register()
+        token = self.csrf_token("/posts/new")
+        video_data = b"\x00\x00\x00\x18ftypmp42" + b"0" * 100
+
+        upload = self.client.post(
+            "/media/upload",
+            data={
+                "csrf_token": token,
+                "media": (BytesIO(video_data), "clip.mp4"),
+            },
+            content_type="multipart/form-data",
+        )
+        payload = upload.get_json()
+        self.assertTrue(payload["ok"])
+        media_token = payload["token"]
+
+        poster_data = b"\xff\xd8\xff\xe0" + b"0" * 100
+        poster = self.client.post(
+            "/media/poster",
+            data={
+                "csrf_token": token,
+                "token": media_token,
+                "poster": (BytesIO(poster_data), "poster.jpg"),
+            },
+            content_type="multipart/form-data",
+        )
+        self.assertEqual(poster.status_code, 200)
+        self.assertTrue(poster.get_json()["ok"])
+
+        create = self.client.post(
+            "/posts/new",
+            data={
+                "csrf_token": token,
+                "title": "带封面的视频",
+                "content": "首页应该使用封面图，而不是加载视频。",
+                "uploaded_media": media_token,
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(create.status_code, 200)
+
+        with self.app.app_context():
+            media = db.session.scalar(
+                db.select(PostMedia).where(PostMedia.kind == "video")
+            )
+            media_filename = media.filename
+            post_id = media.post_id
+
+        poster_name = Path(media_filename).stem + ".jpg"
+        self.assertTrue((self.poster_dir / poster_name).is_file())
+
+        home_html = self.client.get("/").get_data(as_text=True)
+        self.assertIn(f"/posters/{poster_name}", home_html)
+        self.assertNotIn(f"/media/{media_filename}", home_html)
+
+        poster_response = self.client.get(f"/posters/{poster_name}")
+        self.assertEqual(poster_response.status_code, 200)
+        self.assertEqual(poster_response.data, poster_data)
+        poster_response.close()
+
+        token = self.csrf_token("/")
+        self.client.post(
+            f"/posts/{post_id}/delete",
+            data={"csrf_token": token},
+            follow_redirects=True,
+        )
+        self.assertFalse((self.poster_dir / poster_name).exists())
 
     def test_media_size_limits_allow_300_mb_videos(self):
         self.assertEqual(

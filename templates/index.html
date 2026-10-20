@@ -56,11 +56,15 @@
                   <div class="home-post-media{% if post.media|length == 1 %} home-post-media--single{% endif %}">
                     {% for item in post.media %}
                       {% set media_url = url_for('media_file', filename=item.filename) %}
-                      <span class="home-post-media-item{% if item.kind == 'video' %} home-post-media-item--video{% endif %}"{% if item.kind == 'video' %} data-video-poster{% endif %}>
+                      {% set poster_url = media_poster_url(item.filename) if item.kind == 'video' else None %}
+                      <span class="home-post-media-item{% if item.kind == 'video' %} home-post-media-item--video{% endif %}">
                         {% if item.kind == 'image' %}
                           <img src="{{ media_url }}" alt="{{ post.title }} - 图片 {{ loop.index }}" loading="lazy">
+                        {% elif poster_url %}
+                          <img src="{{ poster_url }}" alt="{{ post.title }} - 视频 {{ loop.index }} 封面" loading="lazy">
+                          <span class="video-poster-play" aria-hidden="true">▶</span>
                         {% else %}
-                          <video src="{{ media_url }}" preload="metadata" muted playsinline aria-hidden="true"></video>
+                          <span class="video-poster-play" aria-hidden="true">▶</span>
                         {% endif %}
                       </span>
                     {% endfor %}

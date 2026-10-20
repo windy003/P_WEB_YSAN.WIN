@@ -259,6 +259,7 @@
     const uploadedContainer = form?.querySelector("[data-uploaded-media]");
     const uploadUrl = input.dataset.uploadUrl;
     const discardUrl = input.dataset.discardUrl;
+    const posterUrl = input.dataset.posterUrl;
     const chunkInitUrl = input.dataset.chunkInitUrl;
     const chunkUploadUrl = input.dataset.chunkUploadUrl;
     const chunkCompleteUrl = input.dataset.chunkCompleteUrl;
@@ -473,12 +474,59 @@
         xhr.send(data);
       });
 
-    const finishUpload = (item, payload) => {
-      item.status = "done";
-      item.progress = 100;
+    const waitForPoster = async (item) => {
+      if (item.posterBlob) {
+        return item.posterBlob;
+      }
+      if (!item.posterReady) {
+        return null;
+      }
+      await Promise.race([
+        item.posterReady,
+        new Promise((resolve) => {
+          window.setTimeout(resolve, 3000);
+        }),
+      ]);
+      return item.posterBlob;
+    };
+
+    const uploadPoster = async (item, mediaToken) => {
+      if (!posterUrl) {
+        return;
+      }
+      const blob = await waitForPoster(item);
+      if (!blob) {
+        return;
+      }
+      const data = new FormData();
+      data.append("csrf_token", csrfToken);
+      data.append("token", mediaToken);
+      data.append("poster", blob, "poster.jpg");
+      try {
+        await postJson(item, posterUrl, data);
+      } catch {
+        // The poster is optional; the video itself is already uploaded.
+      }
+    };
+
+    const finishUpload = async (item, payload) => {
       item.token = payload.token;
       item.url = payload.url;
       item.uploadToken = null;
+
+      if (item.kind === "video" && posterUrl && !item.removed) {
+        item.status = "uploading";
+        item.progress = Math.max(item.progress, 99);
+        updateItemProgress(item);
+        refreshSummary();
+        await uploadPoster(item, payload.token);
+        if (item.removed) {
+          return;
+        }
+      }
+
+      item.status = "done";
+      item.progress = 100;
 
       const hidden = document.createElement("input");
       hidden.type = "hidden";
@@ -547,7 +595,7 @@
           discardToken(payload.token);
           return;
         }
-        finishUpload(item, payload);
+        await finishUpload(item, payload);
       } catch (error) {
         if (!item.removed) {
           failUpload(item, error.message || "上传失败，请稍后重试。");
@@ -639,7 +687,7 @@
           discardToken(payload.token);
           return;
         }
-        finishUpload(item, payload);
+        await finishUpload(item, payload);
       } catch (error) {
         if (!item.removed) {
           failUpload(item, error.message || "上传失败，请稍后重试。");
@@ -691,18 +739,27 @@
           durationBadge.textContent = "--:--";
           itemEl.append(durationBadge);
 
+          let frameCaptured = false;
+          let posterAttempts = 0;
+
+          const resolvePoster = () => {
+            if (item.posterReadyResolve) {
+              item.posterReadyResolve();
+              item.posterReadyResolve = null;
+            }
+          };
+
           video.addEventListener(
             "loadedmetadata",
             () => {
               durationBadge.textContent = formatMediaDuration(video.duration);
               if (Number.isFinite(video.duration) && video.duration > 0) {
-                video.currentTime = Math.min(1, video.duration / 2);
+                video.currentTime = thumbnailTime(video.duration, 0);
               }
             },
             { once: true },
           );
 
-          let frameCaptured = false;
           const captureFrame = () => {
             if (frameCaptured || !itemEl.isConnected) {
               return;
@@ -728,19 +785,37 @@
               return;
             }
 
+            if (frameIsMostlyDark(canvas) && posterAttempts < 2) {
+              posterAttempts += 1;
+              video.currentTime = thumbnailTime(video.duration, posterAttempts);
+              return;
+            }
+
             frameCaptured = true;
+            item.posterCaptured = true;
+            canvas.toBlob(
+              (blob) => {
+                if (blob) {
+                  item.posterBlob = blob;
+                }
+                resolvePoster();
+              },
+              "image/jpeg",
+              0.82,
+            );
+
             const thumbnail = document.createElement("img");
             thumbnail.src = canvas.toDataURL("image/jpeg", 0.82);
             thumbnail.alt = item.file?.name || "已上传的视频";
             video.replaceWith(thumbnail);
           };
 
-          video.addEventListener("loadeddata", captureFrame);
           video.addEventListener("seeked", captureFrame);
           video.addEventListener(
             "error",
             () => {
               durationBadge.textContent = "--:--";
+              resolvePoster();
             },
             { once: true },
           );
@@ -850,7 +925,7 @@
 
         known.add(key);
         totalSize += file.size;
-        items.push({
+        const item = {
           id: nextId,
           file,
           key,
@@ -865,7 +940,17 @@
           removed: false,
           hidden: null,
           xhr: null,
-        });
+          posterBlob: null,
+          posterCaptured: false,
+          posterReadyResolve: null,
+          posterReady: null,
+        };
+        if (kind === "video") {
+          item.posterReady = new Promise((resolve) => {
+            item.posterReadyResolve = resolve;
+          });
+        }
+        items.push(item);
         nextId += 1;
       });
 
@@ -983,8 +1068,14 @@
 
     figure.append(overlay);
 
-    let captured = false;
+    const posterSource = video.getAttribute("poster");
+    let captured = Boolean(posterSource);
     let attempts = 0;
+    if (posterSource) {
+      image.src = posterSource;
+      overlay.classList.add("is-ready");
+    }
+
     const captureFrame = () => {
       if (captured) {
         return;
@@ -1025,16 +1116,22 @@
     video.preload = "metadata";
     video.addEventListener("loadedmetadata", () => {
       durationBadge.textContent = formatMediaDuration(video.duration);
-      if (Number.isFinite(video.duration) && video.duration > 0) {
+      if (
+        !posterSource &&
+        Number.isFinite(video.duration) &&
+        video.duration > 0
+      ) {
         video.currentTime = thumbnailTime(video.duration, 0);
       }
     });
     video.addEventListener("seeked", captureFrame);
-    window.setTimeout(() => {
-      if (!captured) {
-        captureFrame();
-      }
-    }, 10000);
+    if (!posterSource) {
+      window.setTimeout(() => {
+        if (!captured) {
+          captureFrame();
+        }
+      }, 10000);
+    }
 
     overlay.addEventListener("click", () => {
       captured = true;

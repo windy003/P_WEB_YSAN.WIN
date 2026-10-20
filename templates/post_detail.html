@@ -49,8 +49,9 @@
                   </a>
                 </figure>
               {% else %}
+                {% set poster_url = media_poster_url(item.filename) %}
                 <figure class="post-media-item post-media-item--video" data-video-thumb>
-                  <video controls preload="metadata" playsinline src="{{ media_url }}" aria-label="{{ post.title }} - 视频 {{ loop.index }}">
+                  <video controls preload="metadata" playsinline src="{{ media_url }}"{% if poster_url %} poster="{{ poster_url }}"{% endif %} aria-label="{{ post.title }} - 视频 {{ loop.index }}">
                     你的浏览器不支持视频播放。
                   </video>
                 </figure>
