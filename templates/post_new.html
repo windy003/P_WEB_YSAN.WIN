@@ -76,11 +76,27 @@
                 multiple
                 data-media-input
                 data-preview-target="media-preview"
+                data-upload-url="{{ url_for('upload_media') }}"
+                data-discard-url="{{ url_for('discard_media') }}"
                 data-max-files="{{ media_max_files }}"
                 data-max-image-bytes="{{ media_max_image_bytes }}"
                 data-max-video-bytes="{{ media_max_video_bytes }}"
+                data-max-total-bytes="{{ media_max_total_bytes }}"
               >
             </label>
+
+            <div data-uploaded-media hidden>
+              {% for item in uploaded_media %}
+                <input
+                  type="hidden"
+                  name="uploaded_media"
+                  value="{{ item.token }}"
+                  data-kind="{{ item.kind }}"
+                  data-size="{{ item.size }}"
+                  data-url="{{ url_for('pending_media_file', token=item.token) }}"
+                >
+              {% endfor %}
+            </div>
 
             <div class="media-preview" id="media-preview" data-media-preview hidden>
               <div class="media-preview-grid" data-media-preview-grid></div>

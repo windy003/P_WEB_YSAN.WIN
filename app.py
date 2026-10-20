@@ -33,6 +33,7 @@ from flask import (
     url_for,
 )
 from flask_sqlalchemy import SQLAlchemy
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from sqlalchemy import delete, func, inspect, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -612,6 +613,80 @@ def save_media_uploads(files, app):
     return saved_media
 
 
+MEDIA_UPLOAD_TOKEN_SALT = "media-upload"
+MEDIA_UPLOAD_TOKEN_MAX_AGE = 24 * 60 * 60
+
+
+def encode_media_upload_token(app, user_id, media):
+    """Sign a pre-uploaded media reference so it can be attached later."""
+    serializer = URLSafeTimedSerializer(
+        app.config["SECRET_KEY"], salt=MEDIA_UPLOAD_TOKEN_SALT
+    )
+    return serializer.dumps(
+        {
+            "user_id": user_id,
+            "filename": media["filename"],
+            "kind": media["kind"],
+        }
+    )
+
+
+def decode_media_upload_token(app, token, user_id):
+    """Return the media described by a valid token owned by this user."""
+    if not token:
+        return None
+    serializer = URLSafeTimedSerializer(
+        app.config["SECRET_KEY"], salt=MEDIA_UPLOAD_TOKEN_SALT
+    )
+    try:
+        data = serializer.loads(token, max_age=MEDIA_UPLOAD_TOKEN_MAX_AGE)
+    except (BadSignature, SignatureExpired):
+        return None
+
+    if not isinstance(data, dict) or data.get("user_id") != user_id:
+        return None
+
+    filename = data.get("filename")
+    kind = data.get("kind")
+    if not isinstance(filename, str) or kind not in ("image", "video"):
+        return None
+    if not re.fullmatch(r"[0-9a-f]{32}\.[a-z0-9]+", filename):
+        return None
+    media_type = ALLOWED_MEDIA_EXTENSIONS.get(Path(filename).suffix)
+    if media_type is None or media_type[0] != kind:
+        return None
+    return {"kind": kind, "filename": filename}
+
+
+def media_total_size(media_folder, items):
+    total = 0
+    for item in items:
+        try:
+            total += (media_folder / item["filename"]).stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def pending_media_from_tokens(app, tokens, user_id):
+    """Collect existing pre-uploaded files referenced by signed tokens."""
+    media_folder = Path(app.config["MEDIA_FOLDER"])
+    items = []
+    seen = set()
+    for token in tokens:
+        media = decode_media_upload_token(app, token, user_id)
+        if media is None or media["filename"] in seen:
+            continue
+        path = media_folder / media["filename"]
+        try:
+            size = path.stat().st_size
+        except OSError:
+            continue
+        seen.add(media["filename"])
+        items.append({**media, "token": token, "size": size})
+    return items
+
+
 def save_avatar_upload(upload, app):
     """Validate and store a profile avatar, returning its generated filename."""
     if upload is None or not upload.filename:
@@ -674,6 +749,15 @@ def display_name_taken(name, exclude_user_id=None):
     if exclude_user_id is not None:
         statement = statement.where(User.id != exclude_user_id)
     return db.session.scalar(statement) is not None
+
+
+def generate_local_phone():
+    """Reserve a unique internal value for accounts without a phone number."""
+    for _ in range(20):
+        phone = f"local-{uuid.uuid4().hex[:14]}"
+        if db.session.scalar(db.select(User.id).where(User.phone == phone)) is None:
+            return phone
+    return f"local-{uuid.uuid4().hex}"[:20]
 
 
 def create_phone_user(phone):
@@ -842,7 +926,12 @@ def create_app(test_config=None):
         if request.method != "GET" or request.endpoint is None:
             return
         endpoint = request.endpoint
-        if endpoint in ("static", "media_file", "avatar_file"):
+        if endpoint in (
+            "static",
+            "media_file",
+            "avatar_file",
+            "pending_media_file",
+        ):
             return
         if endpoint.startswith("admin"):
             return
@@ -884,6 +973,7 @@ def create_app(test_config=None):
             "media_max_files": app.config["MEDIA_MAX_FILES"],
             "media_max_image_bytes": app.config["MEDIA_MAX_IMAGE_BYTES"],
             "media_max_video_bytes": app.config["MEDIA_MAX_VIDEO_BYTES"],
+            "media_max_total_bytes": app.config["MEDIA_MAX_TOTAL_BYTES"],
             "media_max_image_mb": app.config["MEDIA_MAX_IMAGE_BYTES"] // (1024 * 1024),
             "media_max_video_mb": app.config["MEDIA_MAX_VIDEO_BYTES"] // (1024 * 1024),
             "avatar_max_bytes": app.config["AVATAR_MAX_BYTES"],
@@ -950,40 +1040,38 @@ def create_app(test_config=None):
         if g.user is not None:
             return redirect(url_for("index"))
 
-        form = {"username": "", "phone": ""}
+        form = {"username": ""}
         errors = {}
         if request.method == "POST":
             username = request.form.get("username", "").strip()
-            phone = request.form.get("phone", "").strip()
             password = request.form.get("password", "")
             confirm = request.form.get("confirm_password", "")
-            form = {"username": username, "phone": phone}
+            form = {"username": username}
 
             if not 2 <= len(username) <= 20:
                 errors["username"] = "用户名需为 2–20 个字符。"
             elif not USERNAME_PATTERN.fullmatch(username):
                 errors["username"] = "用户名只能包含中文、英文、数字和下划线。"
-            elif not PHONE_PATTERN.fullmatch(phone):
-                errors["phone"] = "请输入有效的 11 位中国大陆手机号。"
             elif not 6 <= len(password) <= 128:
                 errors["password"] = "密码长度需为 6–128 位。"
             elif password != confirm:
                 errors["confirm_password"] = "两次输入的密码不一致。"
-            else:
-                if display_name_taken(username):
-                    errors["username"] = "这个用户名已经被使用了。"
-                if db.session.scalar(db.select(User.id).where(User.phone == phone)):
-                    errors["phone"] = "这个手机号已经注册过了。"
+            elif display_name_taken(username):
+                errors["username"] = "这个用户名已经被使用了。"
 
             if not errors:
-                user = User(username=username, username_key=username.lower(), phone=phone)
+                user = User(
+                    username=username,
+                    username_key=username.lower(),
+                    phone=generate_local_phone(),
+                )
                 user.set_password(password)
                 db.session.add(user)
                 try:
                     db.session.commit()
                 except IntegrityError:
                     db.session.rollback()
-                    flash("用户名或手机号已存在，请换一个试试。", "error")
+                    flash("用户名已存在，请换一个试试。", "error")
                 else:
                     session.clear()
                     session["user_id"] = user.id
@@ -1503,6 +1591,72 @@ def create_app(test_config=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
+    @app.post("/media/upload")
+    @login_required
+    def upload_media():
+        upload = request.files.get("media")
+        if upload is None or not upload.filename:
+            return jsonify(ok=False, message="请选择要上传的文件。"), 400
+
+        try:
+            saved = save_media_uploads([upload], app)
+        except MediaUploadError as exc:
+            return jsonify(ok=False, message=str(exc)), 400
+        except Exception:
+            app.logger.exception("Unexpected error while uploading media")
+            return (
+                jsonify(ok=False, message="文件上传失败，请稍后重试。"),
+                500,
+            )
+
+        item = saved[0]
+        token = encode_media_upload_token(app, g.user.id, item)
+        return jsonify(
+            ok=True,
+            token=token,
+            kind=item["kind"],
+            url=url_for("pending_media_file", token=token),
+        )
+
+    @app.post("/media/discard")
+    @login_required
+    def discard_media():
+        token = request.form.get("token", "")
+        media = decode_media_upload_token(app, token, g.user.id)
+        if media is not None:
+            referenced = db.session.scalar(
+                db.select(PostMedia.id).where(
+                    PostMedia.filename == media["filename"]
+                )
+            )
+            if referenced is None:
+                try:
+                    (Path(app.config["MEDIA_FOLDER"]) / media["filename"]).unlink(
+                        missing_ok=True
+                    )
+                except OSError:
+                    app.logger.warning(
+                        "Could not discard media file %s",
+                        media["filename"],
+                        exc_info=True,
+                    )
+        return jsonify(ok=True)
+
+    @app.get("/media/pending/<token>")
+    @login_required
+    def pending_media_file(token):
+        media = decode_media_upload_token(app, token, g.user.id)
+        if media is None:
+            abort(404)
+
+        response = send_from_directory(
+            app.config["MEDIA_FOLDER"],
+            media["filename"],
+            conditional=True,
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
     @app.get("/posts/<int:post_id>")
     def post_detail(post_id):
         post = db.session.scalar(
@@ -1532,6 +1686,7 @@ def create_app(test_config=None):
     def new_post():
         form = {"title": "", "content": ""}
         errors = {}
+        uploaded_media = []
 
         if request.method == "POST":
             title = request.form.get("title", "").strip()
@@ -1543,12 +1698,22 @@ def create_app(test_config=None):
             if len(content) > 10000:
                 errors["content"] = "正文不能超过 10000 个字符。"
 
+            uploaded_media = pending_media_from_tokens(
+                app, request.form.getlist("uploaded_media"), g.user.id
+            )
+            direct_uploads = [
+                item
+                for item in request.files.getlist("media")
+                if item and item.filename
+            ]
+            max_files = int(app.config["MEDIA_MAX_FILES"])
+            if len(uploaded_media) + len(direct_uploads) > max_files:
+                errors["media"] = f"每条帖子最多只能有 {max_files} 个附件。"
+
             saved_media = []
             if not errors:
                 try:
-                    saved_media = save_media_uploads(
-                        request.files.getlist("media"), app
-                    )
+                    saved_media = save_media_uploads(direct_uploads, app)
                 except MediaUploadError as exc:
                     errors["media"] = str(exc)
                 except Exception:
@@ -1556,8 +1721,31 @@ def create_app(test_config=None):
                     errors["media"] = "文件上传失败，请稍后重试。"
 
             if not errors:
+                media_folder = Path(app.config["MEDIA_FOLDER"])
+                total_bytes = media_total_size(
+                    media_folder, uploaded_media
+                ) + media_total_size(media_folder, saved_media)
+                if total_bytes > int(app.config["MEDIA_MAX_TOTAL_BYTES"]):
+                    for item in saved_media:
+                        (media_folder / item["filename"]).unlink(
+                            missing_ok=True
+                        )
+                    saved_media = []
+                    limit_mb = int(app.config["MEDIA_MAX_TOTAL_BYTES"]) // (
+                        1024 * 1024
+                    )
+                    errors["media"] = (
+                        f"图片和视频总大小不能超过 {limit_mb} MB。"
+                    )
+
+            media_items = [
+                {"kind": item["kind"], "filename": item["filename"]}
+                for item in uploaded_media
+            ] + saved_media
+
+            if not errors:
                 post = Post(title=title, content=content, author=g.user)
-                for index, item in enumerate(saved_media):
+                for index, item in enumerate(media_items):
                     post.media.append(
                         PostMedia(
                             kind=item["kind"],
@@ -1570,10 +1758,11 @@ def create_app(test_config=None):
                     db.session.commit()
                 except Exception:
                     db.session.rollback()
-                    for item in saved_media:
+                    for item in media_items:
                         (Path(app.config["MEDIA_FOLDER"]) / item["filename"]).unlink(
                             missing_ok=True
                         )
+                    uploaded_media = []
                     app.logger.exception("Could not save post with media")
                     errors["media"] = "发布失败，请稍后重试。"
                 else:
@@ -1597,7 +1786,12 @@ def create_app(test_config=None):
                     flash("你的讨论已发布，感谢你的分享。", "success")
                     return redirect(url_for("post_detail", post_id=post.id))
 
-        return render_template("post_new.html", form=form, errors=errors)
+        return render_template(
+            "post_new.html",
+            form=form,
+            errors=errors,
+            uploaded_media=uploaded_media,
+        )
 
     @app.route("/posts/<int:post_id>/edit", methods=["GET", "POST"])
     @login_required
@@ -1610,6 +1804,7 @@ def create_app(test_config=None):
 
         form = {"title": post.title, "content": post.content}
         errors = {}
+        uploaded_media = []
 
         if request.method == "POST":
             title = request.form.get("title", "").strip()
@@ -1621,26 +1816,52 @@ def create_app(test_config=None):
             if len(content) > 10000:
                 errors["content"] = "正文不能超过 10000 个字符。"
 
+            uploaded_media = pending_media_from_tokens(
+                app, request.form.getlist("uploaded_media"), g.user.id
+            )
+            uploads = [
+                upload
+                for upload in request.files.getlist("media")
+                if upload and upload.filename
+            ]
+            max_files = int(app.config["MEDIA_MAX_FILES"])
+            if len(post.media) + len(uploaded_media) + len(uploads) > max_files:
+                errors["media"] = f"每条帖子最多只能有 {max_files} 个附件。"
+
             saved_media = []
             if not errors:
-                uploads = [
-                    upload
-                    for upload in request.files.getlist("media")
-                    if upload and upload.filename
-                ]
-                max_files = int(app.config["MEDIA_MAX_FILES"])
-                if len(post.media) + len(uploads) > max_files:
-                    errors["media"] = f"每条帖子最多只能有 {max_files} 个附件。"
-                else:
-                    try:
-                        saved_media = save_media_uploads(uploads, app)
-                    except MediaUploadError as exc:
-                        errors["media"] = str(exc)
-                    except Exception:
-                        app.logger.exception(
-                            "Unexpected error while saving post media"
+                try:
+                    saved_media = save_media_uploads(uploads, app)
+                except MediaUploadError as exc:
+                    errors["media"] = str(exc)
+                except Exception:
+                    app.logger.exception(
+                        "Unexpected error while saving post media"
+                    )
+                    errors["media"] = "文件上传失败，请稍后重试。"
+
+            if not errors:
+                media_folder = Path(app.config["MEDIA_FOLDER"])
+                total_bytes = media_total_size(
+                    media_folder, uploaded_media
+                ) + media_total_size(media_folder, saved_media)
+                if total_bytes > int(app.config["MEDIA_MAX_TOTAL_BYTES"]):
+                    for item in saved_media:
+                        (media_folder / item["filename"]).unlink(
+                            missing_ok=True
                         )
-                        errors["media"] = "文件上传失败，请稍后重试。"
+                    saved_media = []
+                    limit_mb = int(app.config["MEDIA_MAX_TOTAL_BYTES"]) // (
+                        1024 * 1024
+                    )
+                    errors["media"] = (
+                        f"图片和视频总大小不能超过 {limit_mb} MB。"
+                    )
+
+            media_items = [
+                {"kind": item["kind"], "filename": item["filename"]}
+                for item in uploaded_media
+            ] + saved_media
 
             if not errors:
                 post.title = title
@@ -1648,7 +1869,7 @@ def create_app(test_config=None):
                 next_position = max(
                     (item.position for item in post.media), default=-1
                 ) + 1
-                for offset, item in enumerate(saved_media):
+                for offset, item in enumerate(media_items):
                     post.media.append(
                         PostMedia(
                             kind=item["kind"],
@@ -1660,10 +1881,11 @@ def create_app(test_config=None):
                     db.session.commit()
                 except Exception:
                     db.session.rollback()
-                    for item in saved_media:
+                    for item in media_items:
                         (Path(app.config["MEDIA_FOLDER"]) / item["filename"]).unlink(
                             missing_ok=True
                         )
+                    uploaded_media = []
                     app.logger.exception("Could not update post with media")
                     errors["media"] = "保存失败，请稍后重试。"
                 else:
@@ -1676,6 +1898,7 @@ def create_app(test_config=None):
                 post=post,
                 form=form,
                 errors=errors,
+                uploaded_media=uploaded_media,
             ),
             400 if errors else 200,
         )

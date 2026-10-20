@@ -1787,6 +1787,76 @@ textarea:focus-visible {
   background: #111820;
 }
 
+.media-preview-progress {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  padding: 0 14px;
+  color: #fff;
+  background: rgba(17, 24, 32, 0.66);
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.media-preview-progress.is-error {
+  color: #ffd9d3;
+  background: rgba(76, 24, 20, 0.72);
+}
+
+.media-preview-progress-track {
+  display: block;
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.28);
+}
+
+.media-preview-progress-bar {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: #fff;
+  transition: width 0.15s linear;
+}
+
+.media-preview-progress.is-error .media-preview-progress-bar {
+  background: #ffb4a8;
+}
+
+.media-preview-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  color: #fff;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(24, 35, 45, 0.76);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.media-preview-remove:hover,
+.media-preview-remove:focus-visible {
+  background: var(--danger);
+}
+
 .media-preview-add {
   display: flex;
   align-items: center;

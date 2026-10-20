@@ -74,7 +74,6 @@ class CommunityTestCase(unittest.TestCase):
             data={
                 "csrf_token": token,
                 "username": username,
-                "phone": phone,
                 "password": password,
                 "confirm_password": password,
             },
@@ -172,24 +171,26 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("表单已过期", response.get_data(as_text=True))
 
-    def test_register_and_login_with_phone(self):
+    def test_register_without_phone_and_login_with_password(self):
         response = self.register()
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("欢迎加入耶稣爱你.胜利", html)
         self.assertIn("恩雨", html)
 
-        self.logout()
-        send_response, send_rpc = self.request_sms_code()
-        self.assertEqual(send_response.status_code, 200)
-        self.assertTrue(send_response.get_json()["ok"])
-        self.assertEqual(send_rpc.call_args.args[1], "SendSmsVerifyCode")
+        with self.app.app_context():
+            user = db.session.scalar(
+                db.select(User).where(User.username == "恩雨")
+            )
+            self.assertIsNotNone(user)
+            self.assertTrue(user.phone.startswith("local-"))
 
-        response, verify_rpc = self.login_with_sms()
+        self.logout()
+
+        response = self.login_with_password("恩雨")
         self.assertEqual(response.status_code, 200)
         self.assertIn("欢迎回来", response.get_data(as_text=True))
         self.assertIn("发帖", response.get_data(as_text=True))
-        self.assertEqual(verify_rpc.call_args.args[1], "CheckSmsVerifyCode")
 
     def test_sms_code_request_is_rate_limited(self):
         self.register()
@@ -241,15 +242,12 @@ class CommunityTestCase(unittest.TestCase):
         protected = self.client.get("/posts/new")
         self.assertEqual(protected.status_code, 302)
 
-    def test_duplicate_username_and_phone_are_rejected(self):
-        self.register(username="Morning", phone="13700137000")
+    def test_duplicate_username_is_rejected(self):
+        self.register(username="Morning")
         self.logout()
 
-        response = self.register(username="morning", phone="13600136000")
+        response = self.register(username="morning")
         self.assertIn("用户名已经被使用", response.get_data(as_text=True))
-
-        response = self.register(username="Another", phone="13700137000")
-        self.assertIn("手机号已经注册过", response.get_data(as_text=True))
 
     def test_logged_in_user_can_create_post_and_comment(self):
         self.register()
@@ -791,7 +789,7 @@ class CommunityTestCase(unittest.TestCase):
 
         with self.app.app_context():
             user = db.session.scalar(
-                db.select(User).where(User.phone == "13800138000")
+                db.select(User).where(User.username_key == "恩雨")
             )
             self.assertEqual(user.nickname, "晨光")
             self.assertEqual(user.display_name, "晨光")
@@ -813,7 +811,7 @@ class CommunityTestCase(unittest.TestCase):
         self.assertIn("已恢复使用用户名", response.get_data(as_text=True))
         with self.app.app_context():
             user = db.session.scalar(
-                db.select(User).where(User.phone == "13800138000")
+                db.select(User).where(User.username_key == "恩雨")
             )
             self.assertIsNone(user.nickname)
             self.assertEqual(user.display_name, "恩雨")
@@ -867,7 +865,7 @@ class CommunityTestCase(unittest.TestCase):
 
     def current_user(self):
         return db.session.scalar(
-            db.select(User).where(User.phone == "13800138000")
+            db.select(User).where(User.username_key == "恩雨")
         )
 
     def test_user_can_upload_replace_and_remove_avatar(self):

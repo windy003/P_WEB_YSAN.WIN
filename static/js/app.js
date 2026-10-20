@@ -212,26 +212,32 @@
     const clearButton = preview?.querySelector("[data-media-clear]");
     const status = form?.querySelector("[data-media-status]");
     const submitButton = form?.querySelector('button[type="submit"]');
+    const uploadedContainer = form?.querySelector("[data-uploaded-media]");
+    const uploadUrl = input.dataset.uploadUrl;
+    const discardUrl = input.dataset.discardUrl;
+    const csrfToken =
+      form?.querySelector('input[name="csrf_token"]')?.value || "";
 
-    if (!form || !preview || !grid) {
+    if (!form || !preview || !grid || !uploadUrl || !discardUrl) {
       return;
     }
 
     const maxFiles = Number(input.dataset.maxFiles) || 6;
-    const maxImageBytes = Number(input.dataset.maxImageBytes) || 10 * 1024 * 1024;
-    const maxVideoBytes = Number(input.dataset.maxVideoBytes) || 300 * 1024 * 1024;
+    const maxImageBytes =
+      Number(input.dataset.maxImageBytes) || 10 * 1024 * 1024;
+    const maxVideoBytes =
+      Number(input.dataset.maxVideoBytes) || 300 * 1024 * 1024;
+    const maxTotalBytes = Number(input.dataset.maxTotalBytes) || 0;
     const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp"]);
     const videoExtensions = new Set([".mp4", ".m4v", ".mov", ".webm", ".ogv"]);
-    let selectedFiles = [];
-    let objectUrls = [];
-    let canSyncInputFiles = false;
+    const items = [];
+    let nextId = 1;
 
     try {
       const probe = new DataTransfer();
       input.files = probe.files;
-      canSyncInputFiles = true;
     } catch {
-      canSyncInputFiles = false;
+      return;
     }
 
     const formatSize = (bytes) => {
@@ -259,12 +265,8 @@
       }
     };
 
-    const syncInputFiles = () => {
-      if (!canSyncInputFiles) {
-        return;
-      }
+    const clearNativeInput = () => {
       const transfer = new DataTransfer();
-      selectedFiles.forEach((file) => transfer.items.add(file));
       input.files = transfer.files;
     };
 
@@ -290,50 +292,193 @@
       return { kind };
     };
 
-    const clearPreviewItems = () => {
-      objectUrls.forEach((url) => URL.revokeObjectURL(url));
-      objectUrls = [];
-      grid.replaceChildren();
+    const updateSubmitState = () => {
+      if (!submitButton) {
+        return;
+      }
+      const uploading = items.some((item) => item.status === "uploading");
+      if (!submitButton.dataset.idleLabel) {
+        submitButton.dataset.idleLabel = submitButton.textContent;
+      }
+      submitButton.disabled = uploading;
+      submitButton.textContent = uploading
+        ? "文件上传中…"
+        : submitButton.dataset.idleLabel;
+    };
+
+    const updateItemProgress = (item) => {
+      if (!item.progressEl) {
+        return;
+      }
+      if (item.status === "error") {
+        item.progressEl.classList.add("is-error");
+        item.progressText.textContent = "上传失败";
+        item.progressBar.style.width = "100%";
+        return;
+      }
+      if (item.status === "done") {
+        item.progressEl.remove();
+        item.progressEl = null;
+        item.progressText = null;
+        item.progressBar = null;
+        return;
+      }
+      item.progressText.textContent = `${item.progress}%`;
+      item.progressBar.style.width = `${item.progress}%`;
+    };
+
+    const refreshSummary = () => {
+      const uploading = items.filter((item) => item.status === "uploading");
+      const percent = uploading.length
+        ? Math.round(
+            uploading.reduce((total, item) => total + item.progress, 0) /
+              uploading.length,
+          )
+        : 0;
+
+      if (fileCount) {
+        fileCount.textContent = uploading.length
+          ? `已选择 ${items.length} 个文件 · 上传中 ${percent}%`
+          : `已选择 ${items.length} 个文件`;
+      }
+
+      if (uploading.length) {
+        setStatus(`正在上传 ${uploading.length} 个文件… ${percent}%`);
+      } else if (items.some((item) => item.status === "error")) {
+        setStatus("有文件上传失败，请移除后重新选择。", "error");
+      } else if (items.length) {
+        setStatus("文件已上传，可以发布。", "success");
+      }
+
+      updateSubmitState();
+    };
+
+    const discardToken = (token) => {
+      const data = new FormData();
+      data.append("csrf_token", csrfToken);
+      data.append("token", token);
+      fetch(discardUrl, {
+        method: "POST",
+        body: data,
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    const removeItem = (item) => {
+      if (item.xhr) {
+        item.xhr.abort();
+        item.xhr = null;
+      }
+      if (item.token) {
+        discardToken(item.token);
+      }
+      if (item.objectUrl) {
+        URL.revokeObjectURL(item.objectUrl);
+      }
+      item.hidden?.remove();
+      const index = items.indexOf(item);
+      if (index >= 0) {
+        items.splice(index, 1);
+      }
+      render();
+    };
+
+    const failUpload = (item, message) => {
+      item.status = "error";
+      item.progress = 0;
+      item.xhr = null;
+      updateItemProgress(item);
+      refreshSummary();
+      setStatus(message, "error");
+    };
+
+    const startUpload = (item) => {
+      const xhr = new XMLHttpRequest();
+      item.xhr = xhr;
+      xhr.open("POST", uploadUrl);
+      xhr.responseType = "json";
+
+      xhr.upload.addEventListener("progress", (event) => {
+        if (!event.lengthComputable) {
+          return;
+        }
+        item.progress = Math.min(
+          99,
+          Math.round((event.loaded / event.total) * 100),
+        );
+        updateItemProgress(item);
+        refreshSummary();
+      });
+
+      xhr.addEventListener("load", () => {
+        const payload = xhr.response;
+        if (xhr.status >= 200 && xhr.status < 300 && payload?.ok) {
+          item.status = "done";
+          item.progress = 100;
+          item.token = payload.token;
+          item.url = payload.url;
+
+          const hidden = document.createElement("input");
+          hidden.type = "hidden";
+          hidden.name = "uploaded_media";
+          hidden.value = payload.token;
+          hidden.dataset.kind = payload.kind;
+          hidden.dataset.url = payload.url;
+          uploadedContainer?.append(hidden);
+          item.hidden = hidden;
+
+          updateItemProgress(item);
+          refreshSummary();
+        } else {
+          failUpload(item, payload?.message || "上传失败，请稍后重试。");
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        failUpload(item, "网络错误，上传失败，请稍后重试。");
+      });
+
+      const data = new FormData();
+      data.append("csrf_token", csrfToken);
+      data.append("media", item.file, item.file.name);
+      xhr.send(data);
     };
 
     const render = () => {
-      clearPreviewItems();
-      let rendered = 0;
+      grid.replaceChildren();
 
-      selectedFiles.forEach((file) => {
-        const { kind } = validateFile(file);
-        if (!kind) {
-          return;
-        }
+      items.forEach((item) => {
+        const sourceUrl = item.file ? item.objectUrl : item.url;
+        const itemEl = document.createElement("div");
+        itemEl.className = "media-preview-item";
+        itemEl.title = item.file
+          ? `${item.file.name} · ${formatSize(item.file.size)}`
+          : item.kind === "video"
+            ? "已上传的视频"
+            : "已上传的图片";
 
-        const url = URL.createObjectURL(file);
-        objectUrls.push(url);
-        const item = document.createElement("div");
-        item.className = "media-preview-item";
-        item.title = `${file.name} · ${formatSize(file.size)}`;
-
-        if (kind === "image") {
+        if (item.kind === "image") {
           const image = document.createElement("img");
-          image.src = url;
-          image.alt = file.name;
-          item.append(image);
+          image.src = sourceUrl;
+          image.alt = item.file?.name || "已上传的图片";
+          itemEl.append(image);
         } else {
           const video = document.createElement("video");
-          video.src = url;
+          video.src = sourceUrl;
           video.muted = true;
           video.playsInline = true;
           video.preload = "auto";
-          item.append(video);
+          itemEl.append(video);
 
           const badge = document.createElement("span");
           badge.className = "media-preview-kind";
           badge.textContent = "视频";
-          item.append(badge);
+          itemEl.append(badge);
 
           const durationBadge = document.createElement("span");
           durationBadge.className = "media-preview-duration";
           durationBadge.textContent = "--:--";
-          item.append(durationBadge);
+          itemEl.append(durationBadge);
 
           video.addEventListener(
             "loadedmetadata",
@@ -348,7 +493,7 @@
 
           let frameCaptured = false;
           const captureFrame = () => {
-            if (frameCaptured || !item.isConnected) {
+            if (frameCaptured || !itemEl.isConnected) {
               return;
             }
             const width = video.videoWidth;
@@ -375,7 +520,7 @@
             frameCaptured = true;
             const thumbnail = document.createElement("img");
             thumbnail.src = canvas.toDataURL("image/jpeg", 0.82);
-            thumbnail.alt = file.name;
+            thumbnail.alt = item.file?.name || "已上传的视频";
             video.replaceWith(thumbnail);
           };
 
@@ -390,11 +535,50 @@
           );
         }
 
-        grid.append(item);
-        rendered += 1;
+        if (item.status === "uploading" || item.status === "error") {
+          const progressEl = document.createElement("span");
+          progressEl.className = "media-preview-progress";
+          if (item.status === "error") {
+            progressEl.classList.add("is-error");
+          }
+
+          const track = document.createElement("span");
+          track.className = "media-preview-progress-track";
+          const bar = document.createElement("span");
+          bar.className = "media-preview-progress-bar";
+          bar.style.width =
+            item.status === "error" ? "100%" : `${item.progress}%`;
+          track.append(bar);
+
+          const text = document.createElement("span");
+          text.className = "media-preview-progress-text";
+          text.textContent =
+            item.status === "error" ? "上传失败" : `${item.progress}%`;
+
+          progressEl.append(track, text);
+          itemEl.append(progressEl);
+          item.progressEl = progressEl;
+          item.progressBar = bar;
+          item.progressText = text;
+        } else {
+          item.progressEl = null;
+          item.progressBar = null;
+          item.progressText = null;
+        }
+
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "media-preview-remove";
+        removeButton.setAttribute("aria-label", "移除这个文件");
+        removeButton.textContent = "×";
+        removeButton.addEventListener("click", () => removeItem(item));
+        itemEl.append(removeButton);
+
+        grid.append(itemEl);
+        item.el = itemEl;
       });
 
-      if (rendered > 0 && selectedFiles.length < maxFiles) {
+      if (items.length > 0 && items.length < maxFiles) {
         const addButton = document.createElement("button");
         addButton.type = "button";
         addButton.className = "media-preview-add";
@@ -413,25 +597,23 @@
         grid.append(addButton);
       }
 
-      if (rendered > 0) {
-        preview.hidden = false;
-        fileCount.textContent = `已选择 ${selectedFiles.length} 个文件`;
-        if (clearButton) {
-          clearButton.hidden = false;
-        }
-      } else {
-        preview.hidden = true;
+      preview.hidden = items.length === 0;
+      if (clearButton) {
+        clearButton.hidden = items.length === 0;
       }
 
-      if (submitButton) {
-        submitButton.disabled = false;
-      }
+      refreshSummary();
     };
 
     const addIncomingFiles = (incoming) => {
       const problems = [];
-      const candidates = canSyncInputFiles ? selectedFiles.slice() : [];
-      const known = new Set(candidates.map(fileKey));
+      const known = new Set(
+        items.filter((item) => item.key).map((item) => item.key),
+      );
+      let totalSize = items.reduce(
+        (total, item) => total + (item.size || 0),
+        0,
+      );
 
       incoming.forEach((file) => {
         const key = fileKey(file);
@@ -439,43 +621,119 @@
           return;
         }
 
-        const { error } = validateFile(file);
+        const { kind, error } = validateFile(file);
         if (error) {
           problems.push(error);
           return;
         }
-        if (candidates.length >= maxFiles) {
+        if (items.length >= maxFiles) {
           problems.push(`最多只能选择 ${maxFiles} 个文件。`);
           return;
         }
+        if (maxTotalBytes > 0 && totalSize + file.size > maxTotalBytes) {
+          problems.push(
+            `图片和视频总大小不能超过 ${formatSize(maxTotalBytes)}。`,
+          );
+          return;
+        }
 
-        candidates.push(file);
         known.add(key);
+        totalSize += file.size;
+        items.push({
+          id: nextId,
+          file,
+          key,
+          kind,
+          size: file.size,
+          status: "uploading",
+          progress: 0,
+          token: null,
+          url: "",
+          objectUrl: URL.createObjectURL(file),
+          hidden: null,
+          xhr: null,
+        });
+        nextId += 1;
       });
 
-      selectedFiles = candidates;
-      syncInputFiles();
       render();
-      setStatus(problems[0] || "", problems.length > 0 ? "error" : "");
+      items.forEach((item) => {
+        if (item.status === "uploading" && !item.xhr) {
+          startUpload(item);
+        }
+      });
+
+      if (problems.length) {
+        setStatus(problems[0], "error");
+      }
     };
+
+    Array.from(
+      uploadedContainer?.querySelectorAll('input[name="uploaded_media"]') ||
+        [],
+    ).forEach((hidden) => {
+      items.push({
+        id: nextId,
+        file: null,
+        key: null,
+        kind: hidden.dataset.kind === "video" ? "video" : "image",
+        size: Number(hidden.dataset.size) || 0,
+        status: "done",
+        progress: 100,
+        token: hidden.value,
+        url: hidden.dataset.url || "",
+        objectUrl: null,
+        hidden,
+        xhr: null,
+      });
+      nextId += 1;
+    });
 
     input.addEventListener("change", () => {
       const incoming = Array.from(input.files || []);
+      clearNativeInput();
       if (incoming.length > 0) {
         addIncomingFiles(incoming);
-      } else {
-        syncInputFiles();
       }
     });
 
     clearButton?.addEventListener("click", () => {
-      selectedFiles = [];
+      items.forEach((item) => {
+        if (item.xhr) {
+          item.xhr.abort();
+          item.xhr = null;
+        }
+        if (item.token) {
+          discardToken(item.token);
+        }
+        if (item.objectUrl) {
+          URL.revokeObjectURL(item.objectUrl);
+        }
+        item.hidden?.remove();
+      });
+      items.length = 0;
       input.value = "";
-      syncInputFiles();
       render();
       setStatus("");
       input.focus();
     });
+
+    form.addEventListener("submit", (event) => {
+      if (items.some((item) => item.status === "uploading")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setStatus("文件还在上传中，请等待上传完成后再发布。", "error");
+        updateSubmitState();
+        return;
+      }
+      if (items.some((item) => item.status === "error")) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setStatus("有文件上传失败，请先移除失败的文件。", "error");
+      }
+    });
+
+    render();
   });
 
   document.querySelectorAll("[data-video-thumb]").forEach((figure) => {
