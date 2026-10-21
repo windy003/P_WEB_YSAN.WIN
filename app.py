@@ -2718,6 +2718,23 @@ def create_app(test_config=None):
                     app.logger.exception("Could not update post with media")
                     errors["media"] = "保存失败，请稍后重试。"
                 else:
+                    notify_site_owner(
+                        app,
+                        f"[耶稣爱你.胜利] 修改帖子：{post.title}",
+                        "\n".join(
+                            [
+                                "站点：耶稣爱你.胜利",
+                                "事件：修改帖子",
+                                f"作者：{g.user.display_name}（用户名：{g.user.username}）",
+                                f"时间：{local_time_text(utcnow())}",
+                                f"标题：{post.title}",
+                                f"链接：{url_for('post_detail', post_id=post.id, _external=True)}",
+                                "",
+                                "正文：",
+                                excerpt_text(post.content) or "（无正文）",
+                            ]
+                        ),
+                    )
                     flash("帖子已更新。", "success")
                     return redirect(url_for("post_detail", post_id=post.id))
 

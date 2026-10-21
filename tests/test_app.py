@@ -1392,6 +1392,35 @@ class CommunityTestCase(unittest.TestCase):
         smtp_ssl.assert_called_with("smtp.qq.com", 465, timeout=15)
         server.login.assert_called_with("owner@qq.com", "auth-code")
 
+    def test_editing_post_sends_email_notification(self):
+        self.configure_mail()
+        self.register()
+
+        with patch("app.smtplib.SMTP_SSL") as smtp_ssl:
+            server = smtp_ssl.return_value.__enter__.return_value
+            self.create_post(title="原标题", content="原来的正文。")
+
+            token = self.csrf_token("/posts/1/edit")
+            response = self.client.post(
+                "/posts/1/edit",
+                data={
+                    "csrf_token": token,
+                    "title": "修改后的标题",
+                    "content": "修改后的正文。",
+                },
+                follow_redirects=True,
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(server.send_message.call_count, 2)
+
+            edit_message = server.send_message.call_args.args[0]
+            self.assertIn("修改帖子", edit_message["Subject"])
+            self.assertIn("修改后的标题", edit_message["Subject"])
+            edit_body = edit_message.get_content()
+            self.assertIn("修改后的正文。", edit_body)
+            self.assertIn("恩雨", edit_body)
+            self.assertIn("/posts/1", edit_body)
+
     def test_no_email_is_sent_when_mail_is_not_configured(self):
         self.register()
         with patch("app.smtplib.SMTP_SSL") as smtp_ssl:
