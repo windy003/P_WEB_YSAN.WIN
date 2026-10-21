@@ -248,6 +248,65 @@
     });
   });
 
+  document.querySelectorAll("[data-ip-location-toggle]").forEach((button) => {
+    const cell = button.closest("td") || button.parentElement;
+    const output = cell?.querySelector("[data-ip-location]");
+    const url = button.dataset.locationUrl;
+
+    if (!output || !url) {
+      return;
+    }
+
+    let loaded = false;
+    let loading = false;
+
+    const render = (open) => {
+      output.hidden = !open;
+      button.textContent = open ? "隐藏地址" : "显示地址";
+      button.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+
+    render(false);
+
+    button.addEventListener("click", async () => {
+      if (loaded) {
+        render(output.hidden);
+        return;
+      }
+      if (loading) {
+        return;
+      }
+
+      loading = true;
+      button.disabled = true;
+      button.textContent = "查询中…";
+      output.hidden = false;
+      output.classList.remove("is-error");
+      output.textContent = "正在查询归属地…";
+
+      try {
+        const response = await fetch(url, {
+          headers: { Accept: "application/json" },
+        });
+        const payload = await response.json().catch(() => null);
+        if (!response.ok || !payload?.ok) {
+          throw new Error(payload?.message || "地址查询失败，请稍后重试。");
+        }
+        output.textContent = payload.location || "归属地未知";
+        loaded = true;
+        button.textContent = "隐藏地址";
+        button.setAttribute("aria-expanded", "true");
+      } catch (error) {
+        output.textContent = error.message || "地址查询失败，请稍后重试。";
+        output.classList.add("is-error");
+        button.textContent = "重试";
+      } finally {
+        loading = false;
+        button.disabled = false;
+      }
+    });
+  });
+
   document.querySelectorAll("[data-media-input]").forEach((input) => {
     const form = input.closest("form");
     const preview = document.getElementById(input.dataset.previewTarget);

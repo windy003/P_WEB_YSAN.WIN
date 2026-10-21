@@ -1783,6 +1783,16 @@ def create_app(test_config=None):
             location=lookup_ip_location(visitor.ip_address),
         )
 
+    @app.get("/admin/visitors/<int:visitor_id>/location")
+    @admin_required
+    def admin_visitor_location(visitor_id):
+        visitor = db.session.get(Visitor, visitor_id)
+        if visitor is None:
+            return jsonify(ok=False, message="访问记录不存在。"), 404
+        return jsonify(
+            ok=True, location=lookup_ip_location(visitor.ip_address)
+        )
+
     @app.get("/users/<int:user_id>")
     def user_profile(user_id):
         user = db.session.get(User, user_id)

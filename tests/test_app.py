@@ -986,6 +986,8 @@ class CommunityTestCase(unittest.TestCase):
         self.assertIn("8.8.8.8", visitors_html)
         self.assertIn("9.9.9.9", visitors_html)
         self.assertIn("1.1.1.1", visitors_html)
+        self.assertIn("显示地址", visitors_html)
+        self.assertIn('data-ip-location-toggle', visitors_html)
 
         with self.app.app_context():
             visitor = db.session.scalar(
@@ -1002,6 +1004,22 @@ class CommunityTestCase(unittest.TestCase):
         self.assertIn("测试归属地", detail_html)
         self.assertIn("访问次数", detail_html)
         lookup.assert_called_once_with("8.8.8.8")
+
+        with patch(
+            "app.lookup_ip_location", return_value="测试归属地"
+        ) as lookup:
+            response = self.client.get(
+                f"/admin/visitors/{visitor_id}/location"
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json(), {"ok": True, "location": "测试归属地"}
+        )
+        lookup.assert_called_once_with("8.8.8.8")
+
+        missing = self.client.get("/admin/visitors/999999/location")
+        self.assertEqual(missing.status_code, 404)
+        self.assertEqual(missing.get_json()["ok"], False)
 
         self.assertEqual(lookup_ip_location("127.0.0.1"), "本地或内网地址")
         self.assertEqual(lookup_ip_location("192.168.1.8"), "本地或内网地址")
@@ -1093,6 +1111,10 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(response.headers["Location"], "/admin")
 
         response = self.client.get("/admin/visitors/1")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/admin")
+
+        response = self.client.get("/admin/visitors/1/location")
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/admin")
 

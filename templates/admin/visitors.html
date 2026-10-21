@@ -17,7 +17,7 @@
       <header class="page-heading admin-heading">
         <div>
           <h1>独立 IP</h1>
-          <p>共 {{ pagination.total }} 个独立 IP，点击 IP 可查看归属地。</p>
+          <p>共 {{ pagination.total }} 个独立 IP，点击「显示地址」可直接查看归属地。</p>
         </div>
         <a class="btn btn--ghost btn--small" href="{{ url_for('admin') }}">← 返回管理后台</a>
       </header>
@@ -39,7 +39,17 @@
                 {% for visitor in pagination.items %}
                   <tr>
                     <td data-label="IP 地址">
-                      <a href="{{ url_for('admin_visitor_detail', visitor_id=visitor.id) }}">{{ visitor.ip_address }}</a>
+                      <span class="admin-ip-line">
+                        <a href="{{ url_for('admin_visitor_detail', visitor_id=visitor.id) }}">{{ visitor.ip_address }}</a>
+                        <button
+                          type="button"
+                          class="admin-ip-location-button"
+                          data-ip-location-toggle
+                          data-location-url="{{ url_for('admin_visitor_location', visitor_id=visitor.id) }}"
+                          aria-expanded="false"
+                        >显示地址</button>
+                      </span>
+                      <span class="admin-ip-location" data-ip-location hidden></span>
                     </td>
                     <td data-label="登录用户">
                       {% if visitor.user %}

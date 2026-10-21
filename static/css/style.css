@@ -3120,6 +3120,52 @@ a.post-author:hover .post-author-text strong {
   font-size: 0.68rem;
 }
 
+.admin-ip-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-ip-location-button {
+  padding: 2px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    color 0.2s ease,
+    background-color 0.2s ease;
+}
+
+.admin-ip-location-button:hover {
+  border-color: var(--gold);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--gold-deep);
+}
+
+.admin-ip-location-button:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
+.admin-ip-location {
+  display: block;
+  margin-top: 4px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  white-space: normal;
+}
+
+.admin-ip-location.is-error {
+  color: var(--danger);
+}
+
 .admin-detail-list {
   margin: 0 0 22px;
 }
