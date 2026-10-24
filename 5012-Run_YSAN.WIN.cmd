@@ -1,0 +1,1 @@
+start  /b  ""  ".\.venv\Scripts\pythonw.exe"   ".\app.py"
