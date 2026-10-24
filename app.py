@@ -41,6 +41,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from ip_location import (
+    database_file_info,
+    lookup_ip_location,
+    lookup_ip_parts,
+    normalize_region_name,
+)
+
 PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")
 USERNAME_PATTERN = re.compile(r"^\w+$", re.UNICODE)
 CHINA_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
@@ -370,8 +377,8 @@ def get_client_ip():
     return remote
 
 
-def lookup_ip_location(ip_address):
-    """Resolve an IP's location with a small in-memory cache."""
+def lookup_ip_location_via_api(ip_address):
+    """Resolve an IP's location through ipwho.is with a small in-memory cache."""
     try:
         address = ipaddress.ip_address(ip_address)
     except ValueError:
@@ -424,6 +431,48 @@ def lookup_ip_location(ip_address):
 def utcnow():
     """Return a naive UTC timestamp for consistent storage in SQLite."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+REGION_FILTERS = {
+    "city": "杭州市",
+    "province": "浙江省",
+    "country": "中国",
+}
+
+
+def region_matches(parts, scope, name):
+    """Return True when an ip2region record matches a region filter."""
+    if parts is None:
+        return False
+    if scope == "country":
+        return parts.country == name or (
+            bool(parts.iso) and parts.iso.upper() == name.upper()
+        )
+    if scope == "province":
+        return normalize_region_name(parts.province) == normalize_region_name(name)
+    if scope == "city":
+        return normalize_region_name(parts.city) == normalize_region_name(name)
+    return False
+
+
+def visitor_region_summary(since):
+    """Count 24h visitors for the city/province/country shortcuts."""
+    visitors = db.session.scalars(
+        db.select(Visitor).where(Visitor.last_seen >= since)
+    ).all()
+    counts = {scope: 0 for scope in REGION_FILTERS}
+    parts_by_id = {}
+    for visitor in visitors:
+        parts = lookup_ip_parts(visitor.ip_address)
+        parts_by_id[visitor.id] = parts
+        for scope, name in REGION_FILTERS.items():
+            if region_matches(parts, scope, name):
+                counts[scope] += 1
+    return {
+        "visitors": visitors,
+        "counts": counts,
+        "parts_by_id": parts_by_id,
+    }
 
 
 class User(db.Model):
@@ -1738,10 +1787,12 @@ def create_app(test_config=None):
             .order_by(Comment.created_at.desc(), Comment.id.desc())
             .limit(8)
         ).all()
+        region_summary = visitor_region_summary(since_24h)
 
         return render_template(
             "admin/dashboard.html",
             stats=stats,
+            region_summary=region_summary,
             recent_posts=recent_posts,
             recent_comments=recent_comments,
             admin_username=admin_username,
@@ -1758,17 +1809,45 @@ def create_app(test_config=None):
     def admin_visitors():
         page = request.args.get("page", 1, type=int) or 1
         page = max(page, 1)
+        since_24h = utcnow() - timedelta(hours=24)
+        region_summary = visitor_region_summary(since_24h)
+
+        scope = request.args.get("scope", "").strip()
+        name = request.args.get("name", "").strip()
+        statement = db.select(Visitor).order_by(
+            Visitor.last_seen.desc(), Visitor.id.desc()
+        )
+        if scope in REGION_FILTERS and name:
+            matched_ids = [
+                visitor.id
+                for visitor in region_summary["visitors"]
+                if region_matches(
+                    region_summary["parts_by_id"].get(visitor.id), scope, name
+                )
+            ]
+            statement = statement.where(Visitor.id.in_(matched_ids))
+        else:
+            scope = ""
+            name = ""
+
         pagination = db.paginate(
-            db.select(Visitor).order_by(
-                Visitor.last_seen.desc(), Visitor.id.desc()
-            ),
+            statement,
             page=page,
             per_page=30,
             error_out=False,
         )
+        visitor_locations = {
+            visitor.id: lookup_ip_location(visitor.ip_address)
+            for visitor in pagination.items
+        }
         return render_template(
             "admin/visitors.html",
             pagination=pagination,
+            region_summary=region_summary,
+            ip_db_info=database_file_info(),
+            visitor_locations=visitor_locations,
+            scope=scope,
+            name=name,
         )
 
     @app.get("/admin/visitors/<int:visitor_id>")
@@ -1790,7 +1869,7 @@ def create_app(test_config=None):
         if visitor is None:
             return jsonify(ok=False, message="访问记录不存在。"), 404
         return jsonify(
-            ok=True, location=lookup_ip_location(visitor.ip_address)
+            ok=True, location=lookup_ip_location_via_api(visitor.ip_address)
         )
 
     @app.get("/users/<int:user_id>")

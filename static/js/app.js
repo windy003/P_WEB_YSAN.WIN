@@ -252,6 +252,8 @@
     const cell = button.closest("td") || button.parentElement;
     const output = cell?.querySelector("[data-ip-location]");
     const url = button.dataset.locationUrl;
+    const showLabel = button.dataset.showLabel || "显示地址";
+    const hideLabel = button.dataset.hideLabel || "隐藏地址";
 
     if (!output || !url) {
       return;
@@ -262,7 +264,7 @@
 
     const render = (open) => {
       output.hidden = !open;
-      button.textContent = open ? "隐藏地址" : "显示地址";
+      button.textContent = open ? hideLabel : showLabel;
       button.setAttribute("aria-expanded", open ? "true" : "false");
     };
 
@@ -294,7 +296,7 @@
         }
         output.textContent = payload.location || "归属地未知";
         loaded = true;
-        button.textContent = "隐藏地址";
+        button.textContent = hideLabel;
         button.setAttribute("aria-expanded", "true");
       } catch (error) {
         output.textContent = error.message || "地址查询失败，请稍后重试。";

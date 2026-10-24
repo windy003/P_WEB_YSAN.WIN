@@ -50,6 +50,20 @@
         <a class="btn btn--ghost btn--small" href="{{ url_for('admin_visitors') }}">查看所有独立 IP</a>
       </div>
 
+      <div class="admin-region-filters" aria-label="24 小时地域独立 IP">
+        <span class="admin-region-filters__label">24 小时内：</span>
+        <a class="admin-region-chip" href="{{ url_for('admin_visitors', scope='city', name='杭州市') }}">
+          杭州市 <strong>{{ region_summary.counts.city }}</strong>
+        </a>
+        <a class="admin-region-chip" href="{{ url_for('admin_visitors', scope='province', name='浙江省') }}">
+          浙江省 <strong>{{ region_summary.counts.province }}</strong>
+        </a>
+        <a class="admin-region-chip" href="{{ url_for('admin_visitors', scope='country', name='中国') }}">
+          中国 <strong>{{ region_summary.counts.country }}</strong>
+        </a>
+        <span class="admin-region-filters__hint">点击查看对应的独立 IP</span>
+      </div>
+
       <div class="admin-columns">
         <section class="admin-panel" aria-labelledby="admin-posts-heading">
           <h2 id="admin-posts-heading">最新帖子</h2>

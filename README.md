@@ -11,6 +11,7 @@
   - 用户名 + 密码（用户名不区分大小写）
 - 登录后发帖、发表回应
 - 管理后台：访问 `/admin`，使用 `.env` 中配置的管理员账号登录，查看站点统计、最新帖子和回应
+- 管理后台可直接显示访客 IP 的离线归属地（国家 + 中国省份），支持按 24 小时内杭州市、浙江省、中国的独立 IP 筛选，并保留在线 API 查询按钮用于核对
 - 作者可以重新编辑自己发布的帖子（标题、正文，并可追加图片或视频），编辑按钮仅作者可见
 - 用户之间可以一对一私信，聊天记录保留 7 天后自动清除
 - 有用户发帖、修改帖子或发表回应时，通过 QQ 邮箱自动通知站长
@@ -127,6 +128,28 @@ admin_password=你的管理员密码
 - 登录后可查看注册用户数、帖子数、回应数，以及最新的帖子和回应。
 - 管理员登录状态与普通用户登录相互独立；点击“退出管理后台”可单独退出。
 - 登录表单与退出操作均受 CSRF 保护。
+- 「独立 IP」页面会直接显示离线归属地，并保留「API 查询」按钮调用在线接口核对。
+- 页面顶部提供 24 小时内杭州市、浙江省、中国的独立 IP 快捷筛选。
+
+## IP 归属地（离线库）
+
+管理后台的归属地查询默认使用 [ip2region](https://github.com/lionsoul2014/ip2region) 离线库，
+完全在本地内存中完成，不联网、不受接口限流影响。
+
+- 默认读取项目下的 `data/ip2region_v4.xdb`。
+- 可以用环境变量 `IP2REGION_DATA_DIR` 指向其他目录。
+
+  ```dotenv
+  IP2REGION_DATA_DIR=/root/ip-data
+  ```
+
+- 支持 IPv4；把 `ip2region_v6.xdb` 放进同一目录后会自动启用 IPv6 查询。
+- 数据文件不提交到 Git，首次部署需要手动上传，更新步骤见 `data/README.md`。
+- 页面底部会显示当前数据文件的构建日期和 SHA-256，便于和下载文件比对。
+- 在线 API 查询仍保留：「API 查询」按钮会调用 `ipwho.is`，结果只用于人工核对；
+  离线查询和地域筛选不依赖它。
+
+数据许可证为 Apache-2.0 / MIT。国外国家名的中文翻译来自 CLDR。
 
 ## 图片与视频
 
@@ -237,6 +260,11 @@ python -m unittest discover -s tests -v
 ```text
 .
 ├── app.py                  # Flask 应用、数据模型与路由
+├── ip_location.py          # ip2region 离线归属地查询
+├── data/
+│   ├── README.md           # 数据下载与更新说明
+│   ├── country_names_zh.json  # ISO 国家代码 → 中文名（提交）
+│   └── *.xdb               # 离线 IP 库（不提交，需手动放置）
 ├── .env                    # 本地配置（含 AccessKey，不提交）
 ├── .env.example            # 配置模板
 ├── requirements.txt
@@ -257,11 +285,15 @@ python -m unittest discover -s tests -v
 │   │   └── register.html
 │   └── admin/
 │       ├── login.html     # 管理员登录
-│       └── dashboard.html # 管理后台
+│       ├── dashboard.html # 管理后台
+│       ├── visitors.html  # 独立 IP 列表
+│       └── visitor_detail.html
 ├── static/
 │   ├── banner.png          # 顶部横幅图片
 │   ├── css/style.css
 │   ├── js/app.js
 │   └── favicon.svg
-└── tests/test_app.py
+└── tests/
+    ├── test_app.py
+    └── test_ip_location.py
 ```

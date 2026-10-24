@@ -24,8 +24,23 @@
       <section class="admin-panel">
         <dl class="admin-detail-list">
           <div>
-            <dt>归属地</dt>
+            <dt>归属地（离线库）</dt>
             <dd>{{ location }}</dd>
+          </div>
+          <div>
+            <dt>归属地（API）</dt>
+            <dd>
+              <button
+                type="button"
+                class="admin-ip-location-button"
+                data-ip-location-toggle
+                data-location-url="{{ url_for('admin_visitor_location', visitor_id=visitor.id) }}"
+                data-show-label="API 查询"
+                data-hide-label="收起 API"
+                aria-expanded="false"
+              >API 查询</button>
+              <span class="admin-ip-location" data-ip-location hidden></span>
+            </dd>
           </div>
           <div>
             <dt>登录用户</dt>

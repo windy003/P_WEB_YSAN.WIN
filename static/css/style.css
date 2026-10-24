@@ -3166,6 +3166,86 @@ a.post-author:hover .post-author-text strong {
   color: var(--danger);
 }
 
+.admin-region-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  padding: 12px 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.admin-region-filters__label,
+.admin-region-filters__hint {
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+
+.admin-region-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  text-decoration: none;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.admin-region-chip strong {
+  color: var(--gold-deep);
+  font-size: 0.86rem;
+}
+
+.admin-region-chip:hover,
+.admin-region-chip.is-active {
+  border-color: var(--gold);
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+}
+
+.admin-region-chip--clear {
+  border-style: dashed;
+  color: var(--ink-faint);
+}
+
+.admin-ip-location--offline {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.admin-ip-source {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--gold-soft);
+  color: var(--gold-deep);
+  font-size: 0.62rem;
+  line-height: 1.7;
+}
+
+.admin-ip-db-info {
+  margin: 18px 0 0;
+  color: var(--ink-faint);
+  font-size: 0.74rem;
+  word-break: break-all;
+}
+
+.admin-ip-db-info code {
+  font-size: 0.72rem;
+}
+
+.admin-ip-db-info.is-warning {
+  color: var(--danger);
+}
+
 .admin-detail-list {
   margin: 0 0 22px;
 }

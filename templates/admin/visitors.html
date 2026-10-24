@@ -16,11 +16,37 @@
 
       <header class="page-heading admin-heading">
         <div>
-          <h1>独立 IP</h1>
-          <p>共 {{ pagination.total }} 个独立 IP，点击「显示地址」可直接查看归属地。</p>
+          {% if scope and name %}
+            <h1>独立 IP · {{ name }}</h1>
+            <p>24 小时内来自{{ name }}的独立 IP，共 {{ pagination.total }} 个。</p>
+          {% else %}
+            <h1>独立 IP</h1>
+            <p>共 {{ pagination.total }} 个独立 IP。离线归属地直接显示，「API 查询」可调用在线接口核对。</p>
+          {% endif %}
         </div>
         <a class="btn btn--ghost btn--small" href="{{ url_for('admin') }}">← 返回管理后台</a>
       </header>
+
+      <div class="admin-region-filters" aria-label="24 小时地域筛选">
+        <span class="admin-region-filters__label">
+          24 小时内共 {{ region_summary.visitors|length }} 个独立 IP：
+        </span>
+        <a
+          class="admin-region-chip{% if scope == 'city' and name == '杭州市' %} is-active{% endif %}"
+          href="{{ url_for('admin_visitors', scope='city', name='杭州市') }}"
+        >杭州市 <strong>{{ region_summary.counts.city }}</strong></a>
+        <a
+          class="admin-region-chip{% if scope == 'province' and name == '浙江省' %} is-active{% endif %}"
+          href="{{ url_for('admin_visitors', scope='province', name='浙江省') }}"
+        >浙江省 <strong>{{ region_summary.counts.province }}</strong></a>
+        <a
+          class="admin-region-chip{% if scope == 'country' and name == '中国' %} is-active{% endif %}"
+          href="{{ url_for('admin_visitors', scope='country', name='中国') }}"
+        >中国 <strong>{{ region_summary.counts.country }}</strong></a>
+        {% if scope and name %}
+          <a class="admin-region-chip admin-region-chip--clear" href="{{ url_for('admin_visitors') }}">清除筛选</a>
+        {% endif %}
+      </div>
 
       <section class="admin-panel">
         {% if pagination.items %}
@@ -46,8 +72,13 @@
                           class="admin-ip-location-button"
                           data-ip-location-toggle
                           data-location-url="{{ url_for('admin_visitor_location', visitor_id=visitor.id) }}"
+                          data-show-label="API 查询"
+                          data-hide-label="收起 API"
                           aria-expanded="false"
-                        >显示地址</button>
+                        >API 查询</button>
+                      </span>
+                      <span class="admin-ip-location admin-ip-location--offline">
+                        <span class="admin-ip-source">离线库</span>{{ visitor_locations.get(visitor.id, "归属地未知") }}
                       </span>
                       <span class="admin-ip-location" data-ip-location hidden></span>
                     </td>
@@ -74,20 +105,39 @@
           {% if pagination.pages > 1 %}
             <nav class="pagination" aria-label="独立 IP 分页">
               {% if pagination.has_prev %}
-                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.prev_num) }}">← 上一页</a>
+                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.prev_num, scope=scope or none, name=name or none) }}">← 上一页</a>
               {% else %}
                 <span class="pagination-link is-disabled">← 上一页</span>
               {% endif %}
               <span class="pagination-status">第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
               {% if pagination.has_next %}
-                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.next_num) }}">下一页 →</a>
+                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.next_num, scope=scope or none, name=name or none) }}">下一页 →</a>
               {% else %}
                 <span class="pagination-link is-disabled">下一页 →</span>
               {% endif %}
             </nav>
           {% endif %}
         {% else %}
-          <p class="admin-empty">还没有访问记录。</p>
+          {% if scope and name %}
+            <p class="admin-empty">24 小时内没有来自{{ name }}的独立 IP。</p>
+          {% else %}
+            <p class="admin-empty">还没有访问记录。</p>
+          {% endif %}
+        {% endif %}
+
+        {% if ip_db_info %}
+          <p class="admin-ip-db-info">
+            离线 IP 库：
+            {% for db in ip_db_info %}
+              {{ db.label }} · {{ db.build_date or "未知日期" }} · SHA-256
+              <code title="{{ db.sha256 }}">{{ db.sha256[:12] }}…</code>{% if not loop.last %}；{% endif %}
+            {% endfor %}
+          </p>
+        {% else %}
+          <p class="admin-ip-db-info is-warning">
+            离线 IP 库未加载，直接归属地和地域筛选暂不可用。请把
+            <code>ip2region_v4.xdb</code> 放到 data/ 目录后重启服务。
+          </p>
         {% endif %}
       </section>
     </div>

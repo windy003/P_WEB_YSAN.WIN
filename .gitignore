@@ -7,3 +7,5 @@ instance/
 .pytest_cache/
 .DS_Store
 Thumbs.db
+data/*.xdb
+data/*.download

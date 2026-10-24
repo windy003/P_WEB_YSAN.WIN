@@ -20,6 +20,7 @@ from app import (  # noqa: E402
     User,
     Visitor,
     create_app,
+    database_file_info,
     db,
     lookup_ip_location,
     mp4_duration_seconds,
@@ -986,7 +987,8 @@ class CommunityTestCase(unittest.TestCase):
         self.assertIn("8.8.8.8", visitors_html)
         self.assertIn("9.9.9.9", visitors_html)
         self.assertIn("1.1.1.1", visitors_html)
-        self.assertIn("显示地址", visitors_html)
+        self.assertIn("API 查询", visitors_html)
+        self.assertIn("离线库", visitors_html)
         self.assertIn('data-ip-location-toggle', visitors_html)
 
         with self.app.app_context():
@@ -1006,14 +1008,14 @@ class CommunityTestCase(unittest.TestCase):
         lookup.assert_called_once_with("8.8.8.8")
 
         with patch(
-            "app.lookup_ip_location", return_value="测试归属地"
+            "app.lookup_ip_location_via_api", return_value="测试 API 归属地"
         ) as lookup:
             response = self.client.get(
                 f"/admin/visitors/{visitor_id}/location"
             )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
-            response.get_json(), {"ok": True, "location": "测试归属地"}
+            response.get_json(), {"ok": True, "location": "测试 API 归属地"}
         )
         lookup.assert_called_once_with("8.8.8.8")
 
@@ -1023,6 +1025,80 @@ class CommunityTestCase(unittest.TestCase):
 
         self.assertEqual(lookup_ip_location("127.0.0.1"), "本地或内网地址")
         self.assertEqual(lookup_ip_location("192.168.1.8"), "本地或内网地址")
+
+    def test_visitor_region_filters_and_counts(self):
+        if not database_file_info():
+            self.skipTest("ip2region xdb 数据文件未安装")
+
+        self.configure_admin()
+        with self.app.app_context():
+            db.session.query(Visitor).delete()
+            now = utcnow()
+            db.session.add_all(
+                [
+                    Visitor(
+                        ip_address="223.5.5.5",
+                        visit_count=1,
+                        first_seen=now,
+                        last_seen=now,
+                    ),
+                    Visitor(
+                        ip_address="113.118.113.77",
+                        visit_count=1,
+                        first_seen=now,
+                        last_seen=now,
+                    ),
+                    Visitor(
+                        ip_address="8.8.8.8",
+                        visit_count=1,
+                        first_seen=now,
+                        last_seen=now,
+                    ),
+                    Visitor(
+                        ip_address="223.6.6.6",
+                        visit_count=1,
+                        first_seen=now - timedelta(hours=30),
+                        last_seen=now - timedelta(hours=25),
+                    ),
+                ]
+            )
+            db.session.commit()
+
+        token = self.csrf_token("/admin")
+        self.client.post(
+            "/admin",
+            data={
+                "csrf_token": token,
+                "username": "admin",
+                "password": "admin-pass",
+            },
+        )
+
+        dashboard = self.client.get("/admin").get_data(as_text=True)
+        self.assertIn("杭州市 <strong>1</strong>", dashboard)
+        self.assertIn("浙江省 <strong>1</strong>", dashboard)
+        self.assertIn("中国 <strong>2</strong>", dashboard)
+
+        city_page = self.client.get(
+            "/admin/visitors?scope=city&name=杭州市"
+        ).get_data(as_text=True)
+        self.assertIn("223.5.5.5", city_page)
+        self.assertNotIn("113.118.113.77", city_page)
+        self.assertNotIn("8.8.8.8", city_page)
+
+        province_page = self.client.get(
+            "/admin/visitors?scope=province&name=浙江省"
+        ).get_data(as_text=True)
+        self.assertIn("223.5.5.5", province_page)
+        self.assertNotIn("113.118.113.77", province_page)
+
+        china_page = self.client.get(
+            "/admin/visitors?scope=country&name=中国"
+        ).get_data(as_text=True)
+        self.assertIn("223.5.5.5", china_page)
+        self.assertIn("113.118.113.77", china_page)
+        self.assertNotIn("8.8.8.8", china_page)
+        self.assertNotIn("223.6.6.6", china_page)
 
     def test_visitor_ip_uses_cloudflare_header_behind_proxy(self):
         with self.app.app_context():
