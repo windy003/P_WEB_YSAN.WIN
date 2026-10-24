@@ -1,3 +1,0 @@
-curl -L -o data/ip2region_v4.xdb \
-    https://raw.githubusercontent.com/lionsoul2014/ip2region/master/data/ip2region_v4.xdb
-  systemctl restart P_WEB_YSAN.WIN.service
