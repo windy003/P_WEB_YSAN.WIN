@@ -22,6 +22,7 @@ from app import (  # noqa: E402
     create_app,
     database_file_info,
     db,
+    linkify_text,
     lookup_ip_location,
     mp4_duration_seconds,
     utcnow,
@@ -288,6 +289,43 @@ class CommunityTestCase(unittest.TestCase):
         html = response.get_data(as_text=True)
         self.assertIn("愿平安与你同在", html)
         self.assertIn("恩雨", html)
+
+    def test_linkify_turns_urls_into_safe_links(self):
+        html = str(
+            linkify_text(
+                "看这个 https://example.com/guide，还有 www.ysan.win 和 ysan.win/path。"
+                "结尾句号 https://example.com/a. "
+                "<script>alert(1)</script>"
+            )
+        )
+        self.assertIn('<a class="inline-link" href="https://example.com/guide"', html)
+        self.assertIn('href="http://www.ysan.win"', html)
+        self.assertIn('href="http://ysan.win/path"', html)
+        self.assertIn('href="https://example.com/a"', html)
+        self.assertNotIn("https://example.com/a.", html)
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+
+    def test_urls_in_post_and_comment_are_clickable(self):
+        self.register()
+        self.create_post(
+            title="分享一个链接",
+            content="资料在这里 https://example.com/guide 欢迎查看。",
+        )
+        page = self.client.get("/posts/1").get_data(as_text=True)
+        self.assertIn(
+            '<a class="inline-link" href="https://example.com/guide" '
+            'target="_blank" rel="noopener noreferrer nofollow">https://example.com/guide</a>',
+            page,
+        )
+
+        token = self.csrf_token("/posts/1")
+        self.client.post(
+            "/posts/1/comments",
+            data={"csrf_token": token, "content": "文档在 www.example.org/docs 里"},
+        )
+        page = self.client.get("/posts/1").get_data(as_text=True)
+        self.assertIn('href="http://www.example.org/docs"', page)
 
     def test_post_with_only_title_is_allowed(self):
         self.register()

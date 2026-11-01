@@ -36,6 +36,7 @@ from flask import (
 )
 from flask_sqlalchemy import SQLAlchemy
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+from markupsafe import Markup, escape
 from sqlalchemy import and_, delete, func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -51,6 +52,55 @@ from ip_location import (
 PHONE_PATTERN = re.compile(r"^1[3-9]\d{9}$")
 USERNAME_PATTERN = re.compile(r"^\w+$", re.UNICODE)
 CHINA_TZ = timezone(timedelta(hours=8), name="Asia/Shanghai")
+
+# URL detection for turning plain-text post content into clickable links.
+URL_PATTERN = re.compile(
+    r"(?:https?://|www\.)[^\s<>\"'`，。、；：！？（）【】《》「」『』“”‘’…·]+"
+    r"|(?<![\w@.-])(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+"
+    r"(?:com|cn|net|org|io|win|xyz|top|cc|me|info|tech|site|online|store|shop"
+    r"|club|live|app|dev|ai|co|tv|vip|link|blog|wiki|edu|gov|pro|space|cloud"
+    r"|art|fun|work|world|today|news|life|love)"
+    r"(?![\w-])(?:/[^\s<>\"'`，。、；：！？（）【】《》「」『』“”‘’…·]*)?",
+    re.IGNORECASE,
+)
+_TRAILING_URL_PUNCTUATION = ".,;:!?\"'"
+
+
+def _trim_link_url(url):
+    """Drop sentence punctuation that follows a URL but is not part of it."""
+    trimmed = url.rstrip(_TRAILING_URL_PUNCTUATION)
+    for opener, closer in ("()", "[]", "{}"):
+        while trimmed.endswith(closer) and trimmed.count(opener) < trimmed.count(closer):
+            trimmed = trimmed[:-1].rstrip(_TRAILING_URL_PUNCTUATION)
+    return trimmed
+
+
+def linkify_text(value):
+    """Escape plain text and turn bare URLs into safe, clickable anchors."""
+    if value is None:
+        return ""
+    text = str(value)
+    if not text:
+        return ""
+    parts = []
+    cursor = 0
+    for match in URL_PATTERN.finditer(text):
+        url = _trim_link_url(match.group(0))
+        if len(url) < 4 or url.lower() in {"http://", "https://", "www."}:
+            continue
+        href = url if url.lower().startswith(("http://", "https://")) else f"http://{url}"
+        start, end = match.span()
+        parts.append(escape(text[cursor:start]))
+        parts.append(
+            Markup(
+                '<a class="inline-link" href="{}" target="_blank" '
+                'rel="noopener noreferrer nofollow">{}</a>'
+            ).format(escape(href), escape(url))
+        )
+        parts.append(escape(text[start + len(url):end]))
+        cursor = end
+    parts.append(escape(text[cursor:]))
+    return Markup("").join(parts)
 
 ALLOWED_MEDIA_EXTENSIONS = {
     ".jpg": ("image", "image/jpeg"),
@@ -1368,6 +1418,10 @@ def create_app(test_config=None):
         if hours:
             return f"{hours}:{minutes:02d}:{secs:02d}"
         return f"{minutes:02d}:{secs:02d}"
+
+    @app.template_filter("linkify")
+    def linkify(value):
+        return linkify_text(value)
 
     @app.template_filter("timeago")
     def timeago(value):

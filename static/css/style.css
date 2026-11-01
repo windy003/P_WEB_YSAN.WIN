@@ -2412,6 +2412,24 @@ a.post-author:hover .post-author-text strong {
   white-space: pre-wrap;
 }
 
+.post-body .inline-link,
+.comment-content .inline-link {
+  color: var(--gold-deep);
+  text-decoration: underline;
+  text-decoration-color: rgba(140, 100, 52, 0.35);
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  transition:
+    color 0.2s ease,
+    text-decoration-color 0.2s ease;
+}
+
+.post-body .inline-link:hover,
+.comment-content .inline-link:hover {
+  color: var(--navy);
+  text-decoration-color: var(--navy);
+}
+
 .discussion-empty {
   padding: 34px 24px;
   color: var(--ink-faint);
