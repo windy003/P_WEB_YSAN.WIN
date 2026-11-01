@@ -22,6 +22,7 @@ from app import (  # noqa: E402
     create_app,
     database_file_info,
     db,
+    excerpt_text,
     linkify_text,
     lookup_ip_location,
     mp4_duration_seconds,
@@ -306,6 +307,15 @@ class CommunityTestCase(unittest.TestCase):
         self.assertNotIn("<script>", html)
         self.assertIn("&lt;script&gt;", html)
 
+    def test_post_excerpt_does_not_cut_urls_in_half(self):
+        content = "前缀" * 40 + " https://example.com/" + "a" * 100
+        excerpt = excerpt_text(content)
+        self.assertNotIn("https://example.com", excerpt)
+        self.assertTrue(excerpt.endswith("…"))
+
+        short = "看看 https://example.com/a 就好"
+        self.assertEqual(excerpt_text(short), short)
+
     def test_urls_in_post_and_comment_are_clickable(self):
         self.register()
         self.create_post(
@@ -317,6 +327,11 @@ class CommunityTestCase(unittest.TestCase):
             '<a class="inline-link" href="https://example.com/guide" '
             'target="_blank" rel="noopener noreferrer nofollow">https://example.com/guide</a>',
             page,
+        )
+
+        home = self.client.get("/").get_data(as_text=True)
+        self.assertIn(
+            '<a class="inline-link" href="https://example.com/guide"', home
         )
 
         token = self.csrf_token("/posts/1")

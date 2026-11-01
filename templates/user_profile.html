@@ -59,12 +59,10 @@
             {% for post in pagination.items %}
               {% set post_url = url_for('post_detail', post_id=post.id) %}
               <div class="post-card">
-                <a class="post-card-link" href="{{ post_url }}">
-                  <h3>{{ post.title }}</h3>
-                  {% if post.content %}
-                    <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>
-                  {% endif %}
-                </a>
+                <h3 class="post-card-title"><a href="{{ post_url }}">{{ post.title }}</a></h3>
+                {% if post.content %}
+                  <p class="post-excerpt">{{ post.content|post_excerpt|linkify }}</p>
+                {% endif %}
                 <div class="post-card-foot">
                   <span class="post-card-date">
                     <time datetime="{{ post.created_at.isoformat() }}Z" title="{{ post.created_at|localtime }}">

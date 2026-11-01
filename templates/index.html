@@ -46,13 +46,13 @@
                 <a class="post-card-arrow" href="{{ post_url }}" aria-label="阅读《{{ post.title }}》">↗</a>
               </div>
 
-              <a class="post-card-link" href="{{ post_url }}">
-                <h3>{{ post.title }}</h3>
-                {% if post.content %}
-                  <p class="post-excerpt">{{ post.content|truncate(150, true, '…') }}</p>
-                {% endif %}
+              <h3 class="post-card-title"><a href="{{ post_url }}">{{ post.title }}</a></h3>
+              {% if post.content %}
+                <p class="post-excerpt">{{ post.content|post_excerpt|linkify }}</p>
+              {% endif %}
 
-                {% if post.media %}
+              {% if post.media %}
+                <a class="post-media-link" href="{{ post_url }}" aria-label="阅读《{{ post.title }}》">
                   <div class="home-post-media{% if post.media|length == 1 %} home-post-media--single{% endif %}">
                     {% for item in post.media %}
                       {% set media_url = url_for('media_file', filename=item.filename) %}
@@ -73,8 +73,8 @@
                       </span>
                     {% endfor %}
                   </div>
-                {% endif %}
-              </a>
+                </a>
+              {% endif %}
 
               <div class="post-card-foot">
                 <span class="comment-count">

@@ -102,6 +102,24 @@ def linkify_text(value):
     parts.append(escape(text[cursor:]))
     return Markup("").join(parts)
 
+
+def excerpt_text(value, length=150):
+    """Shorten post content without slicing a URL in half."""
+    if value is None:
+        return ""
+    text = str(value)
+    if len(text) <= length:
+        return text
+    cut = text[:length]
+    for match in URL_PATTERN.finditer(text):
+        start, end = match.span()
+        if start >= length:
+            break
+        if end > length:
+            cut = text[:start]
+            break
+    return cut.rstrip() + "…"
+
 ALLOWED_MEDIA_EXTENSIONS = {
     ".jpg": ("image", "image/jpeg"),
     ".jpeg": ("image", "image/jpeg"),
@@ -1422,6 +1440,10 @@ def create_app(test_config=None):
     @app.template_filter("linkify")
     def linkify(value):
         return linkify_text(value)
+
+    @app.template_filter("post_excerpt")
+    def post_excerpt(value, length=150):
+        return excerpt_text(value, length)
 
     @app.template_filter("timeago")
     def timeago(value):
