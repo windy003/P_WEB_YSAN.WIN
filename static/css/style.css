@@ -3444,9 +3444,13 @@ a.post-author:hover .post-author-text strong {
     width: calc(100% - 40px);
   }
 
+  .site-header .container {
+    width: calc(100% - 24px);
+  }
+
   .header-inner {
-    min-height: 68px;
-    gap: 8px;
+    min-height: 60px;
+    gap: 5px;
   }
 
   .main-nav {
@@ -3460,16 +3464,16 @@ a.post-author:hover .post-author-text strong {
 
   .mobile-home-link {
     display: inline-flex;
-    min-height: 34px;
-    padding: 6px 13px;
+    min-height: 30px;
+    padding: 5px 8px;
     align-items: center;
     color: #e4f0fc;
     border: 1px solid rgba(188, 217, 242, 0.35);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.07);
-    font-size: 0.86rem;
+    font-size: 0.74rem;
     font-weight: 600;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.02em;
     text-decoration: none;
     white-space: nowrap;
   }
@@ -3480,37 +3484,50 @@ a.post-author:hover .post-author-text strong {
   }
 
   .brand-mark {
-    width: 34px;
-    height: 34px;
+    width: 30px;
+    height: 30px;
   }
 
   .user-chip-name {
-    max-width: 84px;
-    font-size: 0.78rem;
+    max-width: 56px;
+    font-size: 0.68rem;
   }
 
   .user-chip {
-    padding: 4px 8px 4px 4px;
+    gap: 5px;
+    padding: 2px 5px 2px 2px;
     border-color: transparent;
     background: transparent;
   }
 
+  .user-chip .avatar--small {
+    width: 24px;
+    height: 24px;
+    font-size: 0.68rem;
+  }
+
   .header-account {
-    gap: 8px;
+    gap: 5px;
+  }
+
+  .nav-text-button {
+    padding: 1px 2px;
+    font-size: 0.68rem;
+    white-space: nowrap;
   }
 
   .admin-entry-link {
-    min-height: 30px;
-    padding: 5px 10px;
-    font-size: 0.72rem;
+    min-height: 26px;
+    padding: 3px 6px;
+    font-size: 0.66rem;
   }
 
   .site-header.is-admin .header-inner {
-    gap: 8px;
+    gap: 5px;
   }
 
   .site-header.is-admin .header-account {
-    gap: 8px;
+    gap: 5px;
   }
 
   .site-header.is-admin .admin-entry-full {
@@ -3523,14 +3540,14 @@ a.post-author:hover .post-author-text strong {
 
   .mobile-compose-link {
     display: inline-flex;
-    min-height: 32px;
-    padding: 6px 11px;
+    min-height: 30px;
+    padding: 5px 8px;
     align-items: center;
     color: #e4f0fc;
     border: 1px solid rgba(188, 217, 242, 0.35);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.07);
-    font-size: 0.77rem;
+    font-size: 0.72rem;
     text-decoration: none;
     white-space: nowrap;
   }
@@ -3538,8 +3555,8 @@ a.post-author:hover .post-author-text strong {
   .mobile-message-link {
     position: relative;
     display: inline-grid;
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     flex: 0 0 auto;
     place-items: center;
     color: #e4f0fc;
@@ -3887,13 +3904,13 @@ a.post-author:hover .post-author-text strong {
   }
 
   .brand-mark {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
   }
 
   .user-chip-name {
-    max-width: 64px;
-    font-size: 0.74rem;
+    max-width: 52px;
+    font-size: 0.68rem;
   }
 
   .header-account .btn--small {
