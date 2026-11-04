@@ -3453,16 +3453,23 @@ a.post-author:hover .post-author-text strong {
     display: none;
   }
 
+  /* 移动端：保留左侧十字架，其右侧显示「首页」入口 */
+  .brand-text {
+    display: none;
+  }
+
   .mobile-home-link {
     display: inline-flex;
-    min-height: 32px;
-    padding: 6px 11px;
+    min-height: 34px;
+    padding: 6px 13px;
     align-items: center;
     color: #e4f0fc;
     border: 1px solid rgba(188, 217, 242, 0.35);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.07);
-    font-size: 0.77rem;
+    font-size: 0.86rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-decoration: none;
     white-space: nowrap;
   }
@@ -3475,10 +3482,6 @@ a.post-author:hover .post-author-text strong {
   .brand-mark {
     width: 34px;
     height: 34px;
-  }
-
-  .brand-text strong {
-    font-size: 1rem;
   }
 
   .user-chip-name {
@@ -3500,14 +3503,6 @@ a.post-author:hover .post-author-text strong {
     min-height: 30px;
     padding: 5px 10px;
     font-size: 0.72rem;
-  }
-
-  .site-header.is-admin .brand-text {
-    display: none;
-  }
-
-  .site-header.is-admin .mobile-home-link {
-    display: none;
   }
 
   .site-header.is-admin .header-inner {
