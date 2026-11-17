@@ -96,6 +96,7 @@
                       {% if visitor.user %}
                         <a href="{{ url_for('user_profile', user_id=visitor.user.id) }}">{{ visitor.user.display_name }}</a>
                         <span class="admin-table-sub">@{{ visitor.user.username }}</span>
+                        <span class="admin-table-sub">手机号：{{ visitor.user.phone }}</span>
                       {% else %}
                         <span class="admin-table-sub">未登录访问</span>
                       {% endif %}

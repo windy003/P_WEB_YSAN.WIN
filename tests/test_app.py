@@ -1376,6 +1376,7 @@ class CommunityTestCase(unittest.TestCase):
         visitors_html = self.client.get("/admin/visitors").get_data(as_text=True)
         self.assertIn("登录用户", visitors_html)
         self.assertIn("@恩雨", visitors_html)
+        self.assertIn("13800138000", visitors_html)
 
         with self.app.app_context():
             visitor_id = db.session.scalar(
@@ -1386,6 +1387,7 @@ class CommunityTestCase(unittest.TestCase):
         ).get_data(as_text=True)
         self.assertIn("登录用户", detail_html)
         self.assertIn("@恩雨", detail_html)
+        self.assertIn("13800138000", detail_html)
 
     def test_visitor_pages_require_admin_login(self):
         response = self.client.get("/admin/visitors")
