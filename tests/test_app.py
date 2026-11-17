@@ -3,6 +3,7 @@ import smtplib
 import sys
 import tempfile
 import unittest
+import uuid
 from datetime import timedelta
 from io import BytesIO
 from pathlib import Path
@@ -79,17 +80,23 @@ class CommunityTestCase(unittest.TestCase):
         password="grace123",
         follow_redirects=True,
     ):
-        token = self.csrf_token("/register")
-        return self.client.post(
-            "/register",
-            data={
-                "csrf_token": token,
-                "username": username,
-                "password": password,
-                "confirm_password": password,
-            },
-            follow_redirects=follow_redirects,
-        )
+        """注册页已停用：直接建号并写入登录会话，供其余用例使用。"""
+        with self.app.app_context():
+            if db.session.scalar(db.select(User).where(User.phone == phone)):
+                phone = f"local-{uuid.uuid4().hex[:14]}"
+            user = User(
+                username=username,
+                username_key=username.lower(),
+                phone=phone,
+            )
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            user_id = user.id
+        with self.client.session_transaction() as sess:
+            sess["user_id"] = user_id
+            sess.permanent = True
+        return self.client.get("/", follow_redirects=follow_redirects)
 
     def logout(self):
         token = self.csrf_token("/")
@@ -132,22 +139,34 @@ class CommunityTestCase(unittest.TestCase):
             )
         return response, rpc_mock
 
-    def login_with_password(self, username, password="grace123"):
-        token = self.csrf_token("/login")
-        return self.client.post(
-            "/login",
-            data={
-                "csrf_token": token,
-                "method": "username",
-                "phone": "",
-                "code": "",
-                "username": username,
-                "password": password,
-            },
-            follow_redirects=True,
-        )
+    def login_as(self, username):
+        """把已存在用户写入会话（密码登录已停用）。"""
+        with self.app.app_context():
+            user = db.session.scalar(
+                db.select(User).where(User.username_key == username.lower())
+            )
+            self.assertIsNotNone(user)
+            user_id = user.id
+        with self.client.session_transaction() as sess:
+            sess["user_id"] = user_id
+            sess.permanent = True
 
     def test_home_page_and_banner(self):
+        anonymous = self.client.get("/")
+        self.assertEqual(anonymous.status_code, 302)
+        self.assertIn("/login", anonymous.headers["Location"])
+
+        banner = self.client.get("/static/banner.png")
+        self.assertEqual(banner.status_code, 200)
+        self.assertEqual(banner.content_type, "image/png")
+        self.assertGreater(len(banner.data), 1000)
+        banner.close()
+
+        stylesheet = self.client.get("/static/css/style.css")
+        self.assertEqual(stylesheet.status_code, 200)
+        stylesheet.close()
+
+        self.register()
         response = self.client.get("/")
         html = response.get_data(as_text=True)
         self.assertEqual(response.status_code, 200)
@@ -160,11 +179,83 @@ class CommunityTestCase(unittest.TestCase):
         self.assertNotIn("今日经文", html)
         self.assertNotIn("社区公约", html)
 
-        banner = self.client.get("/static/banner.png")
-        self.assertEqual(banner.status_code, 200)
-        self.assertEqual(banner.content_type, "image/png")
-        self.assertGreater(len(banner.data), 1000)
-        banner.close()
+    def test_anonymous_is_redirected_from_content_pages(self):
+        self.register()
+        with self.app.app_context():
+            user = db.session.scalar(db.select(User))
+            post = Post(title="仅登录可见", content="正文", user_id=user.id)
+            db.session.add(post)
+            db.session.commit()
+            post_id = post.id
+            user_id = user.id
+
+        self.logout()
+        for path in ("/", f"/posts/{post_id}", f"/users/{user_id}"):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/login", response.headers["Location"])
+
+        response = self.client.get(f"/posts/{post_id}")
+        self.assertIn(f"next=/posts/{post_id}", response.headers["Location"])
+
+    def test_anonymous_cannot_fetch_media_files(self):
+        self.register()
+        video_stem = "0123456789abcdef0123456789abcdef"
+        poster_name = f"{video_stem}.jpg"
+        with self.app.app_context():
+            user = db.session.scalar(db.select(User))
+            user.avatar_filename = "avatar-private.jpg"
+            post = Post(title="私密媒体", content="正文", user_id=user.id)
+            db.session.add(post)
+            db.session.commit()
+            db.session.add_all(
+                [
+                    PostMedia(
+                        post_id=post.id,
+                        kind="image",
+                        filename="image-private.jpg",
+                        position=0,
+                    ),
+                    PostMedia(
+                        post_id=post.id,
+                        kind="video",
+                        filename=f"{video_stem}.mp4",
+                        position=1,
+                    ),
+                ]
+            )
+            db.session.commit()
+
+        self.poster_dir.mkdir(parents=True, exist_ok=True)
+        (self.avatar_dir / "avatar-private.jpg").write_bytes(b"avatar")
+        (self.media_dir / "image-private.jpg").write_bytes(b"\xff\xd8\xff\xe0" + b"0" * 20)
+        (self.media_dir / f"{video_stem}.mp4").write_bytes(b"video")
+        (self.poster_dir / poster_name).write_bytes(b"\xff\xd8\xff\xe0" + b"0" * 20)
+
+        paths = (
+            "/avatars/avatar-private.jpg",
+            "/media/image-private.jpg",
+            f"/media/{video_stem}.mp4",
+            f"/posters/{poster_name}",
+        )
+
+        self.logout()
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 302)
+                self.assertIn("/login", response.headers["Location"])
+
+        self.register(username="另一位", phone="13900139000")
+        for path in paths:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(
+                    response.headers["Cache-Control"], "private, max-age=2592000"
+                )
+                response.close()
 
     def test_guest_must_login_to_start_discussion(self):
         response = self.client.get("/posts/new")
@@ -182,26 +273,14 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("表单已过期", response.get_data(as_text=True))
 
-    def test_register_without_phone_and_login_with_password(self):
-        response = self.register()
-        self.assertEqual(response.status_code, 200)
-        html = response.get_data(as_text=True)
-        self.assertIn("欢迎加入耶稣爱你.胜利", html)
-        self.assertIn("恩雨", html)
+    def test_register_page_is_disabled(self):
+        response = self.client.get("/register")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
 
-        with self.app.app_context():
-            user = db.session.scalar(
-                db.select(User).where(User.username == "恩雨")
-            )
-            self.assertIsNotNone(user)
-            self.assertTrue(user.phone.startswith("local-"))
-
-        self.logout()
-
-        response = self.login_with_password("恩雨")
-        self.assertEqual(response.status_code, 200)
-        self.assertIn("欢迎回来", response.get_data(as_text=True))
-        self.assertIn("发帖", response.get_data(as_text=True))
+        page = self.client.get("/register", follow_redirects=True)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("已改为手机号验证码登录", page.get_data(as_text=True))
 
     def test_sms_code_request_is_rate_limited(self):
         self.register()
@@ -233,13 +312,36 @@ class CommunityTestCase(unittest.TestCase):
             self.assertTrue(user.username.startswith("新朋友"))
             self.assertFalse(user.check_password("not-the-generated-password"))
 
-    def test_login_with_username_is_case_insensitive(self):
-        self.register(username="Grace_7", phone="13900139000")
-        self.logout()
+    def test_password_login_is_rejected(self):
+        with self.app.app_context():
+            user = User(
+                username="Grace_7",
+                username_key="grace_7",
+                phone="13900139000",
+            )
+            user.set_password("grace123")
+            db.session.add(user)
+            db.session.commit()
 
-        response = self.login_with_password("grace_7")
+        token = self.csrf_token("/login")
+        response = self.client.post(
+            "/login",
+            data={
+                "csrf_token": token,
+                "method": "username",
+                "username": "Grace_7",
+                "password": "grace123",
+                "phone": "",
+                "code": "",
+            },
+            follow_redirects=True,
+        )
         self.assertEqual(response.status_code, 200)
-        self.assertIn("欢迎回来", response.get_data(as_text=True))
+        self.assertIn("已改为手机号验证码登录", response.get_data(as_text=True))
+
+        protected = self.client.get("/posts/new")
+        self.assertEqual(protected.status_code, 302)
+        self.assertIn("/login", protected.headers["Location"])
 
     def test_wrong_sms_code_does_not_log_in(self):
         self.register()
@@ -252,13 +354,6 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(rpc_mock.call_args.args[1], "CheckSmsVerifyCode")
         protected = self.client.get("/posts/new")
         self.assertEqual(protected.status_code, 302)
-
-    def test_duplicate_username_is_rejected(self):
-        self.register(username="Morning")
-        self.logout()
-
-        response = self.register(username="morning")
-        self.assertIn("用户名已经被使用", response.get_data(as_text=True))
 
     def test_logged_in_user_can_create_post_and_comment(self):
         self.register()
@@ -913,25 +1008,13 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/")
 
-    def test_signup_prompt_only_shows_for_username_login(self):
-        phone_page = self.client.get("/login").get_data(as_text=True)
-        self.assertIn('data-auth-switch-for="username" hidden', phone_page)
-
-        token = self.csrf_token("/login")
-        response = self.client.post(
-            "/login",
-            data={
-                "csrf_token": token,
-                "method": "username",
-                "username": "nobody",
-                "password": "wrong-password",
-                "phone": "",
-                "code": "",
-            },
-        )
-        username_page = response.get_data(as_text=True)
-        self.assertNotIn('data-auth-switch-for="username" hidden', username_page)
-        self.assertIn("还没有账号", username_page)
+    def test_login_page_only_offers_phone_login(self):
+        page = self.client.get("/login").get_data(as_text=True)
+        self.assertIn("手机号", page)
+        self.assertIn("短信验证码", page)
+        self.assertNotIn("用户名登录", page)
+        self.assertNotIn("创建一个账号", page)
+        self.assertNotIn('name="password"', page)
 
     def test_profile_page_requires_login(self):
         response = self.client.get("/profile")
@@ -1247,19 +1330,16 @@ class CommunityTestCase(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers["Location"], "/admin")
 
-    def test_admin_can_login_from_main_site_and_use_normal_features(self):
+    def test_admin_can_login_from_admin_site_and_use_normal_features(self):
         self.configure_admin()
 
-        token = self.csrf_token("/login")
+        token = self.csrf_token("/admin")
         response = self.client.post(
-            "/login",
+            "/admin",
             data={
                 "csrf_token": token,
-                "method": "username",
                 "username": "admin",
                 "password": "admin-pass",
-                "phone": "",
-                "code": "",
             },
             follow_redirects=True,
         )
@@ -1368,8 +1448,7 @@ class CommunityTestCase(unittest.TestCase):
         self.assertIn("/profile", home.get_data(as_text=True))
 
         self.logout()
-        response = self.login_with_password("恩雨")
-        self.assertIn("欢迎回来", response.get_data(as_text=True))
+        self.login_as("恩雨")
 
         token = self.csrf_token("/profile")
         response = self.client.post(
@@ -1667,7 +1746,7 @@ class CommunityTestCase(unittest.TestCase):
             self.assertIsNone(message.read_at)
 
         self.logout()
-        response = self.login_with_password("恩雨")
+        self.login_as("恩雨")
         inbox_html = self.client.get("/messages").get_data(as_text=True)
         self.assertIn("晨光", inbox_html)
         self.assertIn("主内平安，很高兴认识你。", inbox_html)

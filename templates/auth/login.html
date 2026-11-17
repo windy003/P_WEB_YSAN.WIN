@@ -14,40 +14,12 @@
       <section class="auth-card" aria-labelledby="login-heading">
         <h2 id="login-heading">登录社区</h2>
 
-        <div class="auth-tabs" data-auth-tabs role="tablist" aria-label="登录方式">
-          <button
-            type="button"
-            class="auth-tab{% if active_method == 'phone' %} is-active{% endif %}"
-            id="phone-tab"
-            role="tab"
-            aria-selected="{{ 'true' if active_method == 'phone' else 'false' }}"
-            aria-controls="phone-panel"
-            data-auth-tab="phone"
-          >手机号登录</button>
-          <button
-            type="button"
-            class="auth-tab{% if active_method == 'username' %} is-active{% endif %}"
-            id="username-tab"
-            role="tab"
-            aria-selected="{{ 'true' if active_method == 'username' else 'false' }}"
-            aria-controls="username-panel"
-            data-auth-tab="username"
-          >用户名登录</button>
-        </div>
-
         <form method="post" action="{{ url_for('login') }}" class="stack-form" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-          <input type="hidden" name="method" id="login-method" value="{{ active_method }}">
+          <input type="hidden" name="method" value="phone">
           <input type="hidden" name="next" value="{{ next_url }}">
 
-          <div
-            class="auth-panel"
-            id="phone-panel"
-            role="tabpanel"
-            aria-labelledby="phone-tab"
-            data-auth-panel="phone"
-            {% if active_method != 'phone' %}hidden{% endif %}
-          >
+          <div class="auth-panel" id="phone-panel">
             <div class="form-field">
               <label for="login-phone">手机号</label>
               <input
@@ -86,48 +58,8 @@
             </div>
           </div>
 
-          <div
-            class="auth-panel"
-            id="username-panel"
-            role="tabpanel"
-            aria-labelledby="username-tab"
-            data-auth-panel="username"
-            {% if active_method != 'username' %}hidden{% endif %}
-          >
-            <div class="form-field">
-              <label for="login-username">用户名</label>
-              <input
-                type="text"
-                id="login-username"
-                name="username"
-                value="{{ form.username }}"
-                placeholder="请输入用户名"
-                autocomplete="username"
-                maxlength="20"
-              >
-              <p class="field-hint">用户名不区分大小写。</p>
-            </div>
-
-            <div class="form-field">
-              <label for="login-password">密码</label>
-              <div class="input-with-action">
-                <input
-                  type="password"
-                  id="login-password"
-                  name="password"
-                  placeholder="请输入密码"
-                  autocomplete="current-password"
-                  maxlength="128"
-                >
-                <button type="button" class="password-toggle" data-password-toggle="login-password" aria-label="显示密码">显示</button>
-              </div>
-            </div>
-          </div>
-
           <button type="submit" class="btn btn--primary btn--block">登录</button>
         </form>
-
-        <p class="auth-switch" data-auth-switch-for="username"{% if active_method != 'username' %} hidden{% endif %}>还没有账号？<a href="{{ url_for('register') }}">创建一个账号</a></p>
       </section>
     </div>
   </div>

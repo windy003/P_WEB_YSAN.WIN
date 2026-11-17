@@ -1370,6 +1370,40 @@ def create_app(test_config=None):
             db.session.rollback()
             app.logger.exception("Could not purge expired messages")
 
+    @app.before_request
+    def require_login_for_content():
+        # 站点已改为必须手机号登录后才能浏览内容。闸门放在访客记录之后，
+        # 这样匿名访问仍会进入 Visitor 统计，但拿不到任何内容。
+        if getattr(g, "user", None) is not None or session.get("admin_authenticated"):
+            return None
+
+        endpoint = request.endpoint
+        if endpoint is None:
+            # 交给 404 等错误处理，不拦截。
+            return None
+        if endpoint in {
+            "static",
+            "login",
+            "logout",
+            "send_login_sms_code",
+            "register",
+        } or endpoint.startswith("admin"):
+            return None
+
+        # 页面上的图片/视频子请求也会被拦截，这些请求不要反复写入 flash 提示。
+        if request.method != "GET" or endpoint not in {
+            "media_file",
+            "avatar_file",
+            "poster_file",
+            "pending_media_file",
+        }:
+            flash("请先使用手机号登录，登录后即可浏览全部内容。", "info")
+
+        target = request.full_path if request.method == "GET" else request.path
+        response = redirect(url_for("login", next=safe_next_url(target)))
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.context_processor
     def inject_template_globals():
         unread_message_count = 0
@@ -1503,46 +1537,8 @@ def create_app(test_config=None):
         if g.user is not None:
             return redirect(url_for("index"))
 
-        form = {"username": ""}
-        errors = {}
-        if request.method == "POST":
-            username = request.form.get("username", "").strip()
-            password = request.form.get("password", "")
-            confirm = request.form.get("confirm_password", "")
-            form = {"username": username}
-
-            if not 2 <= len(username) <= 20:
-                errors["username"] = "用户名需为 2–20 个字符。"
-            elif not USERNAME_PATTERN.fullmatch(username):
-                errors["username"] = "用户名只能包含中文、英文、数字和下划线。"
-            elif not 6 <= len(password) <= 128:
-                errors["password"] = "密码长度需为 6–128 位。"
-            elif password != confirm:
-                errors["confirm_password"] = "两次输入的密码不一致。"
-            elif display_name_taken(username):
-                errors["username"] = "这个用户名已经被使用了。"
-
-            if not errors:
-                user = User(
-                    username=username,
-                    username_key=username.lower(),
-                    phone=generate_local_phone(),
-                )
-                user.set_password(password)
-                db.session.add(user)
-                try:
-                    db.session.commit()
-                except IntegrityError:
-                    db.session.rollback()
-                    flash("用户名已存在，请换一个试试。", "error")
-                else:
-                    session.clear()
-                    session["user_id"] = user.id
-                    session.permanent = True
-                    flash(f"注册成功，欢迎加入耶稣爱你.胜利，{user.username}。", "success")
-                    return redirect(url_for("index"))
-
-        return render_template("auth/register.html", form=form, errors=errors)
+        flash("本站已改为手机号验证码登录，验证通过后会自动创建账号。", "info")
+        return redirect(url_for("login"))
 
     @app.post("/login/sms-code")
     def send_login_sms_code():
@@ -1643,17 +1639,15 @@ def create_app(test_config=None):
         if g.user is not None:
             return redirect(url_for("index"))
 
-        active_method = "phone"
-        form = {"phone": "", "username": ""}
+        form = {"phone": ""}
         next_url = safe_next_url(request.args.get("next"))
 
         if request.method == "POST":
-            active_method = (
-                "username" if request.form.get("method") == "username" else "phone"
-            )
             next_url = safe_next_url(request.form.get("next"))
 
-            if active_method == "phone":
+            if request.form.get("method") == "username":
+                flash("本站已改为手机号验证码登录，请使用手机号和验证码登录。", "info")
+            else:
                 phone = request.form.get("phone", "").strip()
                 code = request.form.get("code", "").strip()
                 form["phone"] = phone
@@ -1710,61 +1704,9 @@ def create_app(test_config=None):
                     sms_error or "手机号或验证码不正确，请重新获取后再试。",
                     "error",
                 )
-            else:
-                username = request.form.get("username", "").strip()
-                password = request.form.get("password", "")
-                form["username"] = username
-
-                admin_username = app.config.get("ADMIN_USERNAME", "")
-                admin_password = app.config.get("ADMIN_PASSWORD", "")
-                if (
-                    admin_username
-                    and admin_password
-                    and username
-                    and password
-                    and hmac.compare_digest(
-                        username.lower().encode("utf-8"),
-                        admin_username.lower().encode("utf-8"),
-                    )
-                    and hmac.compare_digest(
-                        password.encode("utf-8"),
-                        admin_password.encode("utf-8"),
-                    )
-                ):
-                    admin_user = ensure_admin_user(admin_username, admin_password)
-                    if admin_user is not None:
-                        session.clear()
-                        session["user_id"] = admin_user.id
-                        session["admin_authenticated"] = True
-                        session.permanent = True
-                        flash(
-                            "管理员登录成功。你已拥有普通用户权限，"
-                            "可点击“进入后台”管理站点。",
-                            "success",
-                        )
-                        return redirect(next_url or url_for("index"))
-
-                user = (
-                    db.session.scalar(
-                        db.select(User).where(User.username_key == username.lower())
-                    )
-                    if username
-                    else None
-                )
-
-                if user is not None and password and user.check_password(password):
-                    session.clear()
-                    session["user_id"] = user.id
-                    session.permanent = True
-                    flash(f"欢迎回来，{user.display_name}。", "success")
-                    return redirect(next_url or url_for("index"))
-
-                flash("用户名或密码不正确，请重试。", "error")
-
         return render_template(
             "auth/login.html",
             form=form,
-            active_method=active_method,
             next_url=next_url or "",
         )
 
@@ -2225,6 +2167,7 @@ def create_app(test_config=None):
             max_age=30 * 24 * 60 * 60,
             conditional=True,
         )
+        response.headers["Cache-Control"] = "private, max-age=2592000"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
@@ -2242,6 +2185,7 @@ def create_app(test_config=None):
             max_age=30 * 24 * 60 * 60,
             conditional=True,
         )
+        response.headers["Cache-Control"] = "private, max-age=2592000"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
@@ -2369,6 +2313,7 @@ def create_app(test_config=None):
             max_age=30 * 24 * 60 * 60,
             conditional=True,
         )
+        response.headers["Cache-Control"] = "private, max-age=2592000"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
