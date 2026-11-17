@@ -1236,6 +1236,76 @@ class CommunityTestCase(unittest.TestCase):
         self.assertNotIn("8.8.8.8", china_page)
         self.assertNotIn("223.6.6.6", china_page)
 
+    def test_visitor_login_filter(self):
+        self.configure_admin()
+        with self.app.app_context():
+            db.session.query(Visitor).delete()
+            user = User(
+                username="登录用户",
+                username_key="登录用户".lower(),
+                phone="13900139000",
+            )
+            user.set_password("grace123")
+            db.session.add(user)
+            db.session.commit()
+
+            now = utcnow()
+            db.session.add_all(
+                [
+                    Visitor(
+                        ip_address="8.8.8.8",
+                        user_id=user.id,
+                        visit_count=2,
+                        first_seen=now,
+                        last_seen=now,
+                    ),
+                    Visitor(
+                        ip_address="9.9.9.9",
+                        visit_count=1,
+                        first_seen=now,
+                        last_seen=now,
+                    ),
+                    Visitor(
+                        ip_address="1.1.1.1",
+                        user_id=user.id,
+                        visit_count=1,
+                        first_seen=now - timedelta(hours=30),
+                        last_seen=now - timedelta(hours=25),
+                    ),
+                ]
+            )
+            db.session.commit()
+
+        token = self.csrf_token("/admin")
+        self.client.post(
+            "/admin",
+            data={
+                "csrf_token": token,
+                "username": "admin",
+                "password": "admin-pass",
+            },
+        )
+
+        all_html = self.client.get("/admin/visitors").get_data(as_text=True)
+        self.assertIn("8.8.8.8", all_html)
+        self.assertIn("9.9.9.9", all_html)
+        self.assertIn("1.1.1.1", all_html)
+        self.assertIn("登录的 IP <strong>1</strong>", all_html)
+        self.assertIn("href=\"/admin/visitors?login=1\"", all_html)
+
+        login_html = self.client.get(
+            "/admin/visitors?login=1"
+        ).get_data(as_text=True)
+        self.assertIn("8.8.8.8", login_html)
+        self.assertNotIn("9.9.9.9", login_html)
+        # Login filter is scoped to the last 24 hours like the region chips.
+        self.assertNotIn("1.1.1.1", login_html)
+        self.assertIn("24 小时内登录过的独立 IP，共 1 个", login_html)
+
+        # Clicking the active chip removes the filter.
+        self.assertIn("href=\"/admin/visitors\"", login_html)
+        self.assertIn("清除筛选", login_html)
+
     def test_visitor_ip_uses_cloudflare_header_behind_proxy(self):
         with self.app.app_context():
             db.session.query(Visitor).delete()

@@ -1570,6 +1570,16 @@ a.post-author:hover .post-author-text strong {
   padding: 48px 52px 40px;
 }
 
+.auth-mobile-brand {
+  display: none;
+  margin: 0 0 10px;
+  color: var(--gold-deep);
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .auth-card h2 {
   margin: 0;
   font-family: var(--font-serif);
@@ -3480,6 +3490,10 @@ a.post-author:hover .post-author-text strong {
 
   .auth-aside {
     display: none;
+  }
+
+  .auth-mobile-brand {
+    display: block;
   }
 
   .auth-card {

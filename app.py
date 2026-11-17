@@ -1832,9 +1832,8 @@ def create_app(test_config=None):
 
         scope = request.args.get("scope", "").strip()
         name = request.args.get("name", "").strip()
-        statement = db.select(Visitor).order_by(
-            Visitor.last_seen.desc(), Visitor.id.desc()
-        )
+        login_only = request.args.get("login") == "1"
+        matched_ids = None
         if scope in REGION_FILTERS and name:
             matched_ids = [
                 visitor.id
@@ -1843,10 +1842,33 @@ def create_app(test_config=None):
                     region_summary["parts_by_id"].get(visitor.id), scope, name
                 )
             ]
-            statement = statement.where(Visitor.id.in_(matched_ids))
         else:
             scope = ""
             name = ""
+
+        # A logged-in IP row is one whose latest visitor was authenticated.
+        # Like the region shortcuts, this filter only looks at the last 24h.
+        login_ids = {
+            visitor.id
+            for visitor in region_summary["visitors"]
+            if visitor.user_id is not None
+        }
+        login_count = len(login_ids)
+        if login_only:
+            if matched_ids is None:
+                matched_ids = login_ids
+            else:
+                matched_ids = [
+                    visitor_id
+                    for visitor_id in matched_ids
+                    if visitor_id in login_ids
+                ]
+
+        statement = db.select(Visitor).order_by(
+            Visitor.last_seen.desc(), Visitor.id.desc()
+        )
+        if matched_ids is not None:
+            statement = statement.where(Visitor.id.in_(matched_ids))
 
         pagination = db.paginate(
             statement,
@@ -1866,6 +1888,8 @@ def create_app(test_config=None):
             visitor_locations=visitor_locations,
             scope=scope,
             name=name,
+            login_only=login_only,
+            login_count=login_count,
         )
 
     @app.get("/admin/visitors/<int:visitor_id>")

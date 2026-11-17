@@ -16,7 +16,13 @@
 
       <header class="page-heading admin-heading">
         <div>
-          {% if scope and name %}
+          {% if login_only and scope and name %}
+            <h1>独立 IP · 登录 · {{ name }}</h1>
+            <p>24 小时内来自{{ name }}且登录过的独立 IP，共 {{ pagination.total }} 个。</p>
+          {% elif login_only %}
+            <h1>独立 IP · 登录</h1>
+            <p>24 小时内登录过的独立 IP，共 {{ pagination.total }} 个。</p>
+          {% elif scope and name %}
             <h1>独立 IP · {{ name }}</h1>
             <p>24 小时内来自{{ name }}的独立 IP，共 {{ pagination.total }} 个。</p>
           {% else %}
@@ -27,23 +33,27 @@
         <a class="btn btn--ghost btn--small" href="{{ url_for('admin') }}">← 返回管理后台</a>
       </header>
 
-      <div class="admin-region-filters" aria-label="24 小时地域筛选">
+      <div class="admin-region-filters" aria-label="24 小时筛选">
         <span class="admin-region-filters__label">
           24 小时内共 {{ region_summary.visitors|length }} 个独立 IP：
         </span>
         <a
           class="admin-region-chip{% if scope == 'city' and name == '杭州市' %} is-active{% endif %}"
-          href="{{ url_for('admin_visitors', scope='city', name='杭州市') }}"
+          href="{{ url_for('admin_visitors', scope='city', name='杭州市', login='1' if login_only else none) }}"
         >杭州市 <strong>{{ region_summary.counts.city }}</strong></a>
         <a
           class="admin-region-chip{% if scope == 'province' and name == '浙江省' %} is-active{% endif %}"
-          href="{{ url_for('admin_visitors', scope='province', name='浙江省') }}"
+          href="{{ url_for('admin_visitors', scope='province', name='浙江省', login='1' if login_only else none) }}"
         >浙江省 <strong>{{ region_summary.counts.province }}</strong></a>
         <a
           class="admin-region-chip{% if scope == 'country' and name == '中国' %} is-active{% endif %}"
-          href="{{ url_for('admin_visitors', scope='country', name='中国') }}"
+          href="{{ url_for('admin_visitors', scope='country', name='中国', login='1' if login_only else none) }}"
         >中国 <strong>{{ region_summary.counts.country }}</strong></a>
-        {% if scope and name %}
+        <a
+          class="admin-region-chip{% if login_only %} is-active{% endif %}"
+          href="{% if login_only %}{{ url_for('admin_visitors', scope=scope or none, name=name or none) }}{% else %}{{ url_for('admin_visitors', scope=scope or none, name=name or none, login='1') }}{% endif %}"
+        >登录的 IP <strong>{{ login_count }}</strong></a>
+        {% if (scope and name) or login_only %}
           <a class="admin-region-chip admin-region-chip--clear" href="{{ url_for('admin_visitors') }}">清除筛选</a>
         {% endif %}
       </div>
@@ -105,20 +115,24 @@
           {% if pagination.pages > 1 %}
             <nav class="pagination" aria-label="独立 IP 分页">
               {% if pagination.has_prev %}
-                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.prev_num, scope=scope or none, name=name or none) }}">← 上一页</a>
+                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.prev_num, scope=scope or none, name=name or none, login='1' if login_only else none) }}">← 上一页</a>
               {% else %}
                 <span class="pagination-link is-disabled">← 上一页</span>
               {% endif %}
               <span class="pagination-status">第 {{ pagination.page }} / {{ pagination.pages }} 页</span>
               {% if pagination.has_next %}
-                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.next_num, scope=scope or none, name=name or none) }}">下一页 →</a>
+                <a class="pagination-link" href="{{ url_for('admin_visitors', page=pagination.next_num, scope=scope or none, name=name or none, login='1' if login_only else none) }}">下一页 →</a>
               {% else %}
                 <span class="pagination-link is-disabled">下一页 →</span>
               {% endif %}
             </nav>
           {% endif %}
         {% else %}
-          {% if scope and name %}
+          {% if login_only and scope and name %}
+            <p class="admin-empty">24 小时内没有来自{{ name }}且登录过的独立 IP。</p>
+          {% elif login_only %}
+            <p class="admin-empty">24 小时内没有登录的独立 IP。</p>
+          {% elif scope and name %}
             <p class="admin-empty">24 小时内没有来自{{ name }}的独立 IP。</p>
           {% else %}
             <p class="admin-empty">还没有访问记录。</p>
