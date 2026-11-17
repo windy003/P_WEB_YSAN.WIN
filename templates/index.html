@@ -25,9 +25,15 @@
     </div>
   </section>
 
-  {% if pagination.items %}
-    <section class="home-posts" id="latest-discussions" aria-label="社区帖子">
-      <div class="container container--narrow">
+  <section class="home-posts" id="latest-discussions" aria-label="社区帖子">
+    <div class="container container--narrow">
+      <p class="hymn-promo">
+        <span class="hymn-promo-text">赞美诗网站:赞美诗.耶稣爱你.胜利</span>
+        <span class="hymn-promo-site">zms.ysan.win</span>
+        <a class="hymn-promo-enter" href="https://zms.ysan.win" target="_blank" rel="noopener noreferrer">点我进入</a>
+      </p>
+
+      {% if pagination.items %}
         <div class="post-list">
           {% for post in pagination.items %}
             {% set post_url = url_for('post_detail', post_id=post.id) %}
@@ -118,7 +124,7 @@
             {% endif %}
           </nav>
         {% endif %}
-      </div>
-    </section>
-  {% endif %}
+      {% endif %}
+    </div>
+  </section>
 {% endblock %}
